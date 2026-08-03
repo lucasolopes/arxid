@@ -38,7 +38,7 @@ jobs:
       run:
         working-directory: impl/rust
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Rust
         run: rustup toolchain install stable --profile minimal --component rustfmt,clippy
@@ -84,7 +84,7 @@ jobs:
       run:
         working-directory: impl/rust
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Rust
         run: |
@@ -108,7 +108,7 @@ jobs:
       run:
         working-directory: impl/rust
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Rust
         run: |
@@ -132,7 +132,7 @@ jobs:
       run:
         working-directory: impl/ts
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v4
         with:
@@ -164,7 +164,7 @@ jobs:
     name: vectors are reproducible
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Rust
         run: rustup toolchain install stable --profile minimal
