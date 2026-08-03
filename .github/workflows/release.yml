@@ -17,8 +17,16 @@ name: Release
 #
 # Required secrets (Settings > Secrets > Actions):
 #   CARGO_REGISTRY_TOKEN  - crates.io API token
-#   NPM_TOKEN             - npm automation token (not needed if you configure
-#                           npm Trusted Publishing for this repo instead)
+#
+# npm needs NO secret. It uses trusted publishing (OIDC): npmjs.com is
+# configured to trust this repository and this workflow filename, and the
+# `id-token: write` permission on the publish job lets npm mint a short-lived,
+# workflow-scoped credential. Nothing to store, nothing to rotate, nothing to
+# expire. Configure it at npmjs.com > package > Settings > Trusted Publisher:
+#   Organization or user: lucasolopes
+#   Repository:           arxid
+#   Workflow filename:    release.yml
+#   Environment name:     release
 
 on:
   push:
@@ -165,18 +173,26 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # Trusted publishing needs Node >= 22.14 and npm >= 11.5.1.
       - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: impl/ts/package-lock.json
           registry-url: https://registry.npmjs.org
 
+      - name: Ensure npm supports trusted publishing
+        run: npm install -g npm@latest
+
+      # No NODE_AUTH_TOKEN on purpose. Authentication is the OIDC credential
+      # minted from `id-token: write` above, which npm exchanges for a
+      # short-lived, workflow-scoped publish token. Setting a token here would
+      # override OIDC and break trusted publishing.
+      #
+      # Provenance is automatic under trusted publishing; NPM_CONFIG_PROVENANCE
+      # is not needed and is left unset.
       - name: Publish
         working-directory: impl/ts
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_CONFIG_PROVENANCE: "true"
         run: |
           npm ci
           if [ "${{ needs.verify.outputs.dry_run }}" = "true" ]; then
