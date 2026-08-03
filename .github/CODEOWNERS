@@ -1,0 +1,9 @@
+# Default owner for everything.
+* @lucasolopes
+
+# The frozen contract. Changes here alter every implementation's output and
+# require a spec version bump, so they always get a maintainer review.
+/spec/                @lucasolopes
+/vectors/             @lucasolopes
+/impl/rust/src/       @lucasolopes
+/.github/workflows/   @lucasolopes

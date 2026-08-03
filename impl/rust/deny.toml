@@ -1,0 +1,48 @@
+# cargo-deny configuration. Run locally with:
+#
+#   cargo install cargo-deny
+#   cargo deny check
+#
+# arxid is MIT and its core has no dependencies at all. This file exists to keep
+# it that way: if a dependency ever appears with an incompatible license or a
+# known advisory, CI fails.
+
+[graph]
+all-features = true
+
+[advisories]
+yanked = "deny"
+ignore = []
+
+[licenses]
+# Permissive only. A copyleft dependency would undermine the point of shipping
+# arxid under MIT.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Zlib",
+    "CC0-1.0",
+    "Unlicense",
+]
+confidence-threshold = 0.93
+# The allow list is deliberately broader than what the tree currently uses, so a
+# new permissive dependency does not require editing this file. Do not warn
+# about the entries that happen to be unused today.
+unused-allowed-license = "allow"
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+# The core permutation must never grow a dependency. The optional features may:
+# `zeroize` for key wiping and `wasm-bindgen` for the optional wasm target.
+deny = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

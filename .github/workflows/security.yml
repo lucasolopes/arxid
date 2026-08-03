@@ -1,0 +1,83 @@
+name: Security
+
+# Runs on every change and weekly, because advisories appear without anyone
+# touching the code.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays, 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  codeql:
+    name: codeql (typescript)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          queries: security-and-quality
+
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:javascript-typescript
+
+  cargo-deny:
+    name: cargo deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Checks the Rust dependency tree for security advisories, license
+      # compatibility (the core must stay MIT-compatible), duplicate versions,
+      # and unexpected registries.
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: impl/rust/Cargo.toml
+          command: check advisories licenses bans sources
+
+  npm-audit:
+    name: npm audit
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: impl/ts
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: impl/ts/package-lock.json
+
+      - run: npm ci
+
+      # The package ships zero runtime dependencies, so anything found here is
+      # in the build/test toolchain only. Still worth knowing about.
+      - name: Audit
+        run: npm audit --audit-level=high
+
+      - name: Assert zero runtime dependencies
+        run: |
+          deps=$(node -p "Object.keys(require('./package.json').dependencies || {}).length")
+          if [ "$deps" != "0" ]; then
+            echo "::error::the published package must have zero runtime dependencies, found $deps"
+            exit 1
+          fi
+          echo "runtime dependencies: 0"
