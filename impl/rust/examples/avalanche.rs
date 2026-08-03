@@ -22,7 +22,12 @@
 
 use arxid::permute::{feistel_n, MAX_ID, WIDTH_BITS};
 
-const SAMPLES: u64 = 50_000;
+const SAMPLES: u64 = 200_000;
+
+/// Round counts to sweep. The sweep goes well past the frozen count of 4 to
+/// show that the extra rounds buy nothing on the mean-avalanche metric.
+const MAX_ROUNDS: usize = 12;
+
 const KEY: u64 = 0x9E37_79B9_7F4A_7C15;
 
 /// SplitMix64, so the sample is pseudo-random but fully reproducible without
@@ -48,7 +53,7 @@ fn main() {
         "rounds", "avalanche", "coverage", "worst pair"
     );
 
-    for rounds in 1..=6usize {
+    for rounds in 1..=MAX_ROUNDS {
         // flips[i][j] = how many times flipping input bit i flipped output bit j
         let mut flips = vec![vec![0u64; width]; width];
         let mut total_flipped: u64 = 0;

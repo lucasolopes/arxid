@@ -92,17 +92,20 @@ integer range, so no language needs a big-integer type for the public values.
 ### Diffusion
 
 Flip one input bit; how many output bits change? The ideal is half of them.
-Measured over 50,000 sampled ids ([`examples/avalanche.rs`](impl/rust/examples/avalanche.rs),
+Swept over 1 to 12 rounds, 200,000 sampled ids each
+([`examples/avalanche.rs`](impl/rust/examples/avalanche.rs),
 `cargo run --release --example avalanche`):
 
 | Rounds | Avalanche | Bit-pair coverage | Worst single pair |
 |---:|---:|---:|---:|
 | 1 | 0.1381 | 440/1600 | 0.5000 |
-| 2 | 0.3623 | 1220/1600 | 0.5000 |
-| 3 | 0.4867 | **1600/1600** | 0.4846 |
-| **4** | **0.5001** | **1600/1600** | 0.1656 |
-| 5 | 0.5001 | 1600/1600 | 0.0078 |
-| 6 | 0.5001 | 1600/1600 | 0.0078 |
+| 2 | 0.3622 | 1220/1600 | 0.5000 |
+| 3 | 0.4866 | **1600/1600** | 0.4840 |
+| **4** | **0.5001** | **1600/1600** | 0.1640 |
+| 5 | 0.5001 | 1600/1600 | 0.0040 |
+| 6 | 0.5000 | 1600/1600 | 0.0049 |
+| 8 | 0.5000 | 1600/1600 | 0.0035 |
+| 12 | 0.5000 | 1600/1600 | 0.0054 |
 
 *Avalanche* is the mean fraction of output bits that flip; ideal 0.5.
 *Coverage* is how many of the 40×40 (input bit, output bit) pairs can be
@@ -111,10 +114,39 @@ reach some output bit. *Worst single pair* is the largest deviation from 0.5 for
 any individual pair; ideal 0.
 
 Four rounds is where the **mean** reaches 0.5 with full coverage, and that is
-what spec v1 froze. Read the last column honestly: at 4 rounds one bit pair is
-still 0.17 away from ideal, and it takes 5 rounds for per-pair balance to close.
-The calibration optimised the average, not the worst case. This is a
-statistical property, not a security proof.
+what spec v1 froze. Rounds past 5 buy nothing on any of these metrics; the
+sweep runs to 12 to show exactly that.
+
+Read the last column honestly: at 4 rounds one bit pair is still 0.164 away
+from ideal, and it takes 5 rounds for per-pair balance to close. The
+calibration optimised the average, not the worst case. This is a statistical
+property, not a security proof.
+
+### Performance
+
+Measured with criterion, single threaded, `cargo bench`:
+
+| Benchmark | Time/op | Throughput |
+|---|---:|---:|
+| `permute/obfuscate` (raw u64 → u64) | 4.42 ns | ~225M ops/s |
+| `permute/deobfuscate` | 9.86 ns | ~101M ops/s |
+| `arxid/encode` (permute + base62 String) | 49.4 ns | ~20M ops/s |
+| `feistel_hmac/encode` (same Feistel, HMAC-SHA256 round) | 786.6 ns | ~1.3M ops/s |
+
+The last two lines are the point.
+[`benches/compare_bench.rs`](impl/rust/benches/compare_bench.rs) holds the
+network structure constant (same balanced Feistel, same 4 rounds, same 40-bit
+width, same base62 step) and swaps **only** the round function, ARX for
+HMAC-SHA256. That isolates the claim: **~16x faster**, from integer ops instead
+of hash calls.
+
+The ratio travels better than the absolute numbers. Both sides run on the same
+machine in the same harness, so the gap survives whatever CPU you are on, while
+the ns figures do not. Measured on a 13th Gen Intel Core i7-1355U, 16 GB RAM,
+Windows 11 Pro; median of three runs on an otherwise idle machine. Treat the
+absolute figures as order-of-magnitude, not as a spec: on a loaded laptop the
+same benchmarks drifted by 3x, and the ratio itself ranged 7x-23x until the
+machine was quiet.
 
 ## Portability
 

@@ -60,9 +60,10 @@ discussion but are not treated as vulnerabilities:
 - **4 rounds** is a calibrated minimum for the avalanche target, not a
   cryptographic security margin. The calibration targeted *mean* avalanche and
   structural bit coverage. Per-pair balance is weaker: the worst individual
-  (input bit, output bit) pair sits about 0.166 from the ideal 0.5 at 4 rounds,
-  versus about 0.008 at 5 rounds. Documented in SPEC.md section 3.2 and
-  reproducible with `impl/rust/examples/avalanche.rs`.
+  (input bit, output bit) pair sits about 0.164 from the ideal 0.5 at 4 rounds,
+  versus about 0.004 at 5 rounds. Measured over 1 to 12 rounds with 200,000
+  samples each. Documented in SPEC.md section 3.2 and reproducible with
+  `impl/rust/examples/avalanche.rs`.
 - **The 40-bit domain** is small by cryptographic standards. It is a
   format-preserving choice driven by the 7-character code length.
 
