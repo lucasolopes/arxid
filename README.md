@@ -4,54 +4,45 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Spec v1](https://img.shields.io/badge/spec-v1%20frozen-informational)](spec/SPEC.md)
 
-**Turn a sequential integer id into a keyed, non-enumerable, reversible code -
-identically in any language.**
+**Sequential id in, 7-character non-enumerable code out. Reversible with the key.
+Identical in every language.**
 
+```rust
+let arxid = Arxid::new(key);
+
+arxid.obfuscate_str(1000);   // "7cAKhgu"
+arxid.obfuscate_str(1001);   // "Cc1W2dQ"
+arxid.obfuscate_str(1002);   // "7figrne"
+
+arxid.deobfuscate_str("Cc1W2dQ");   // Some(1001)
 ```
-1000  ->  7cAKhgu
-1001  ->  Cc1W2dQ
-1002  ->  7figrne
-```
 
-<sub>(real output, key `0x9E3779B97F4A7C15`)</sub>
+No lookup table, no extra column, no state. Just a keyed permutation over the
+integers you already have.
 
-arxid is a balanced Feistel network with an ARX (Add-Rotate-XOR) round function,
-format-preserving over a 40-bit domain, plus an optional 7-character base62
-encoding. It is a pure library: no server, no HTTP, no network, no I/O.
+## Install
 
-## The problem
-
-Exposing `/orders/1042` tells everyone that orders `1041` and `1043` exist. Your
-row count, your growth rate, and your competitors' ability to scrape you all
-leak from the URL. Random UUIDs fix the leak but cost you a compact primary key
-and a compact URL.
-
-arxid keeps the sequential integer in your database and shows the world a
-7-character code that reveals nothing about ordering or volume. It is
-reversible with the key, so there is no lookup table and no extra column.
-
-## Quickstart
-
-### Rust
+<table>
+<tr><th>Rust</th><th>TypeScript</th></tr>
+<tr valign="top"><td>
 
 ```toml
-[dependencies]
 arxid = "0.1"
 ```
 
 ```rust
 use arxid::Arxid;
 
-let arxid = Arxid::new(0x9E37_79B9_7F4A_7C15); // your own random key
+let a = Arxid::new(0x9E37_79B9_7F4A_7C15);
 
-let code = arxid.obfuscate(1001);
-assert_eq!(arxid.deobfuscate(code), 1001);
+let code = a.obfuscate(1001);
+a.deobfuscate(code);          // 1001
 
-let s = arxid.obfuscate_str(1001);      // 7-character base62
-assert_eq!(arxid.deobfuscate_str(&s), Some(1001));
+let s = a.obfuscate_str(1001);
+a.deobfuscate_str(&s);        // Some(1001)
 ```
 
-### TypeScript
+</td><td>
 
 ```sh
 npm install arxid
@@ -60,89 +51,165 @@ npm install arxid
 ```ts
 import { Arxid } from "arxid";
 
-const arxid = new Arxid(0x9e3779b97f4a7c15n); // bigint: the key is a u64
+const a = new Arxid(0x9e3779b97f4a7c15n);
 
-const code = arxid.obfuscate(1001);
-arxid.deobfuscate(code); // 1001
+const code = a.obfuscate(1001);
+a.deobfuscate(code);          // 1001
 
-const s = arxid.obfuscateStr(1001);  // 7-character base62
-arxid.deobfuscateStr(s);             // 1001
+const s = a.obfuscateStr(1001);
+a.deobfuscateStr(s);          // 1001
 ```
 
-## How portability works
+</td></tr>
+</table>
+
+## The problem
+
+Exposing `/orders/1042` tells everyone that orders `1041` and `1043` exist. Your
+row count, your growth rate, and your competitors' ability to scrape you all
+leak from the URL. Random UUIDs plug the leak but cost you a compact primary key
+and a compact URL, and they need a second indexed column.
+
+arxid keeps the sequential integer in your database and shows the world a
+7-character code that reveals nothing about ordering or volume.
+
+## How it works
+
+A balanced Feistel network with an ARX (Add-Rotate-XOR) round function,
+format-preserving over a 40-bit domain, plus an optional base62 encoding.
+
+| | |
+|---|---|
+| Domain | `[0, 2^40 - 1]` = `[0, 1099511627775]` (about 1.1 trillion ids) |
+| Key | `u64` (effective key space 2^63, see [SPEC.md §2.1](spec/SPEC.md)) |
+| Rounds | 4 |
+| Output | base62, fixed 7 characters, alphabet `0-9A-Za-z` in that order |
+| Dependencies | none in the core (pure integer arithmetic) |
+
+40 bits encodes to exactly 7 base62 characters and fits inside IEEE-754's safe
+integer range, so no language needs a big-integer type for the public values.
+
+### Diffusion
+
+Flip one input bit; how many output bits change? The ideal is half of them.
+Measured over 50,000 sampled ids ([`examples/avalanche.rs`](impl/rust/examples/avalanche.rs),
+`cargo run --release --example avalanche`):
+
+| Rounds | Avalanche | Bit-pair coverage | Worst single pair |
+|---:|---:|---:|---:|
+| 1 | 0.1381 | 440/1600 | 0.5000 |
+| 2 | 0.3623 | 1220/1600 | 0.5000 |
+| 3 | 0.4867 | **1600/1600** | 0.4846 |
+| **4** | **0.5001** | **1600/1600** | 0.1656 |
+| 5 | 0.5001 | 1600/1600 | 0.0078 |
+| 6 | 0.5001 | 1600/1600 | 0.0078 |
+
+*Avalanche* is the mean fraction of output bits that flip; ideal 0.5.
+*Coverage* is how many of the 40×40 (input bit, output bit) pairs can be
+influenced at all; anything under 1600 means some input bit structurally cannot
+reach some output bit. *Worst single pair* is the largest deviation from 0.5 for
+any individual pair; ideal 0.
+
+Four rounds is where the **mean** reaches 0.5 with full coverage, and that is
+what spec v1 froze. Read the last column honestly: at 4 rounds one bit pair is
+still 0.17 away from ideal, and it takes 5 rounds for per-pair balance to close.
+The calibration optimised the average, not the worst case. This is a
+statistical property, not a security proof.
+
+## Portability
 
 The product here is not a library in one language. It is a **frozen
 specification plus canonical test vectors**:
 
-- [`spec/SPEC.md`](spec/SPEC.md) - normative, frozen at v1. Every parameter
-  (width, rounds, the ARX constants, the golden constant, the key schedule, the
-  alphabet and its order, the code length) is part of the contract.
-- [`vectors/vectors.json`](vectors/vectors.json) - 61 known-answer tests. Every
-  implementation validates against this exact file.
+- [`spec/SPEC.md`](spec/SPEC.md) — normative, frozen at v1. Width, rounds, the
+  ARX constants, the golden constant, the key schedule, the alphabet and its
+  order, the code length: all contract.
+- [`vectors/vectors.json`](vectors/vectors.json) — 61 known-answer tests,
+  generated by the reference implementation. Every port validates against this
+  exact file.
 
 An id obfuscated in Rust deobfuscates identically in TypeScript because both
 agree with the vectors. **A port that disagrees with the vectors is a bug in the
 port**, not a variation.
 
-Round-trip tests alone are not enough: they are symmetric and hide width and
-wrapping bugs. Only the known-answer vectors catch those. See
+Round-trip tests alone are not enough: they are symmetric and pass happily on an
+implementation that wraps at the wrong width or truncates the 64-bit key
+schedule. Only known-answer vectors catch that. See
 [`vectors/README.md`](vectors/README.md).
 
-### A note on WASM
-
-The Rust crate has an optional `wasm` feature. It exists so you can run the
-reference implementation itself in a browser. **It is not the portability
-mechanism.** Interoperability comes from native ports validated against the
-vectors, not from shipping one binary everywhere. Prefer the native port for
-your language.
-
-## Ports
+### Ports
 
 | Language | Status | Location |
 |---|---|---|
 | Rust | ✅ reference implementation | [`impl/rust`](impl/rust) |
 | TypeScript / JavaScript | ✅ native port | [`impl/ts`](impl/ts) |
-| Go | planned | - |
-| Python | planned | - |
-| C# | planned | - |
-| Kotlin / Java | planned | - |
-| Ruby | planned | - |
-| PHP | planned | - |
+| Go, Python, C#, Kotlin, Ruby, PHP | planned | — |
 
-Want to add one? See [`CONTRIBUTING.md`](CONTRIBUTING.md). Reimplement the spec
-natively, pass the vectors, open a PR. A port that does not pass the vectors is
-not merged.
+Adding one is the most useful contribution you can make: reimplement the spec
+natively, pass the vectors, open a PR. See [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
-## Parameters
+### WASM is not the portability story
 
-| | |
-|---|---|
-| Domain | `[0, 2^40 - 1]` = `[0, 1099511627775]` |
-| Key | `u64` (effective key space 2^63, see SPEC.md section 2.1) |
-| Rounds | 4 (calibrated: smallest count reaching 0.5000 avalanche with full 40/40 coverage) |
-| Encoding | base62, fixed 7 characters, alphabet `0-9A-Za-z` in that order |
+The Rust crate has an optional `wasm` feature so you can run the reference
+implementation itself in a browser. **It is not how arxid travels between
+languages.** Interoperability comes from native ports validated against the
+vectors, not from shipping one binary everywhere. Prefer the native port.
 
-40 bits holds about 1.1 trillion ids and encodes to exactly 7 characters. The
-domain fits inside IEEE-754's safe integer range, so no language needs a
-big-integer type for the public values.
+## Compared to Sqids (and Hashids)
+
+[Sqids](https://sqids.org) is the obvious alternative and is a fine tool. It
+solves a broader problem; arxid solves a narrower one more strictly.
+
+| | arxid | Sqids |
+|---|---|---|
+| Output length | fixed 7 chars | variable (minimum configurable, no maximum) |
+| Values per code | one | one or many |
+| Keying | `u64` key driving an ARX key schedule | shuffled alphabet |
+| Domain | `[0, 2^40-1]` | unbounded |
+| Profanity blocklist | no | yes |
+| Ecosystem | 2 implementations | many, mature |
+| Interop guarantee | canonical vectors, frozen spec | per-implementation |
+
+**Choose Sqids** if you need to pack several numbers into one id, have ids
+beyond 2^40, want the profanity blocklist, or want a library that already
+exists in your language today.
+
+**Choose arxid** if you need every code to be exactly the same length, and you
+want the obfuscation driven by an actual key with measured diffusion rather than
+by an alphabet permutation.
+
+**Do not choose either as a security control.** Sqids is explicit about this:
+*"There is no encryption of any kind"* and *"Given enough effort, somebody could
+reverse-engineer your shuffled alphabet, so this is by no means a technique to
+hide sensitive data"*
+([Sqids FAQ](https://sqids.org/faq)). arxid uses a real key schedule instead of
+an alphabet shuffle, but it is equally **not encryption, not a MAC, and not
+independently audited**. Neither library is a substitute for authorization.
 
 ## Security
 
 Read this before deploying.
 
-- arxid is a **keyed reversible permutation for id obfuscation** - it defeats
+- arxid is a **keyed reversible permutation for id obfuscation**. It defeats
   trivial enumeration of sequential resources. It is **not** encryption of
   arbitrary data.
-- It provides **no authentication and no integrity**: it is **not a MAC**. A
-  valid-looking output does not prove it was produced by a holder of the key.
-  For unforgeability, layer a real MAC on top.
-- Non-enumerability is a **measured statistical property** (avalanche/SAC over a
-  reduced-round ARX permutation), **not** a cryptographic guarantee. Resistance
-  to key recovery depends on the round count and construction. This construction
-  has **not** undergone independent cryptographic audit.
-- **ID obfuscation is not access control.** Do not use arxid as the sole
+- It provides **no authentication and no integrity**: it is **not a MAC**. Any
+  well-formed 7-character code decodes to *some* id. A valid-looking output does
+  not prove it was produced by a holder of the key. For unforgeability, layer a
+  real MAC on top.
+- Non-enumerability is a **measured statistical property** (see the diffusion
+  table above), **not** a cryptographic guarantee. Four rounds is a calibrated
+  minimum for the avalanche target, not a security margin. Resistance to key
+  recovery depends on the round count and construction and has not been formally
+  analysed. This construction has **not** undergone independent cryptographic
+  audit.
+- The **effective key space is 2^63**, not 2^64: `key` and `~key` produce the
+  same permutation ([SPEC.md §2.1](spec/SPEC.md)). This is frozen behavior.
+- The **40-bit domain is small** by cryptographic standards. It is a
+  format-preserving choice driven by the 7-character code length.
+- **ID obfuscation is not access control.** Never use arxid as the sole
   authorization barrier for a resource that must stay secret.
-- Each deployment SHOULD use its own random key, kept out of source control.
+- Use a random key per deployment, kept out of source control.
 
 To report a vulnerability, see [`SECURITY.md`](SECURITY.md).
 
@@ -152,12 +219,12 @@ SemVer, per implementation. The **algorithm** is frozen at spec v1.
 
 Any observable behavior change requires a **new spec version and a new set of
 vectors**, never a silent bump. A port producing output different from the
-reference is a bug in the port, not an acceptable variation.
+reference is a bug in the port.
 
 ## License
 
 MIT. See [`LICENSE`](LICENSE).
 
 The core permutation and base62 encoding were originally written by the same
-author for [quark](https://github.com/lucasolopes/quark) and are relicensed
-here under MIT by the copyright holder. arxid carries no AGPL-licensed code.
+author for [quark](https://github.com/lucasolopes/quark) and are relicensed here
+under MIT by the copyright holder. arxid carries no AGPL-licensed code.

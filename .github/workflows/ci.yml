@@ -154,6 +154,12 @@ jobs:
       - name: Build
         run: npm run build
 
+      # publint checks the published package shape; attw checks that the type
+      # declarations resolve correctly for consumers. The package is ESM-only by
+      # design, hence the esm-only profile.
+      - name: Lint the publishable package
+        run: npm run lint:pack
+
   vectors:
     name: vectors are reproducible
     runs-on: ubuntu-latest

@@ -89,6 +89,17 @@ round function operates in u32; results are masked back to 20 bits).
 avalanche with full 40/40 bit-coverage. Frozen — do not change; changing it
 changes every output.)
 
+**Note on what the calibration measured (informative).** The 0.5000 figure is
+the *mean* fraction of output bits flipped, and the 40/40 figure is structural
+coverage. Neither is per-pair balance. Measured over 50,000 sampled ids, the
+worst individual (input bit, output bit) pair deviates from the ideal 0.5 by
+about **0.166 at 4 rounds**, falling to about 0.008 at 5 rounds. So 4 rounds
+closes diffusion on average and structurally, but strict per-pair SAC is not
+reached until 5. This is a documented property of spec v1, not a defect to
+repair: changing the round count changes every output. Treat the round count as
+a calibrated diffusion target, not a security margin (see §9). The measurement
+is reproducible via `impl/rust/examples/avalanche.rs`.
+
 **Forward (encode)** — for `round = 0, 1, 2, 3` in ascending order:
 
 ```

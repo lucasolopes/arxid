@@ -42,10 +42,13 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
+    "lint:pack": "publint && attw --pack . --profile esm-only",
     "prepack": "npm run build"
   },
   "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
     "@types/node": "^22.10.2",
+    "publint": "^0.3.2",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
   }

@@ -58,7 +58,11 @@ discussion but are not treated as vulnerabilities:
 - **`key` and `!key` produce the same permutation** (SPEC.md section 2.1), so
   the effective key space is 2^63 rather than 2^64. This is frozen in spec v1.
 - **4 rounds** is a calibrated minimum for the avalanche target, not a
-  cryptographic security margin.
+  cryptographic security margin. The calibration targeted *mean* avalanche and
+  structural bit coverage. Per-pair balance is weaker: the worst individual
+  (input bit, output bit) pair sits about 0.166 from the ideal 0.5 at 4 rounds,
+  versus about 0.008 at 5 rounds. Documented in SPEC.md section 3.2 and
+  reproducible with `impl/rust/examples/avalanche.rs`.
 - **The 40-bit domain** is small by cryptographic standards. It is a
   format-preserving choice driven by the 7-character code length.
 
