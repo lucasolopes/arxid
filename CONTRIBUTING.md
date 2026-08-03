@@ -165,6 +165,25 @@ it.
 Publishing waits on the `release` environment, so a manual approval can be
 required in Settings > Environments.
 
+### Credentials
+
+| Registry | How it authenticates |
+|---|---|
+| crates.io | `CARGO_REGISTRY_TOKEN` repository secret |
+| npm | **no secret.** Trusted publishing (OIDC): npm trusts this repository, the `release.yml` workflow, and the `release` environment. The job's `id-token: write` permission mints a short-lived, workflow-scoped credential. |
+
+Do not add `NODE_AUTH_TOKEN` to the npm job. Setting it overrides OIDC and
+breaks trusted publishing.
+
+Inspect or change the npm trust relationship with:
+
+```sh
+npx npm@latest trust list arxid
+```
+
+Note that `npm trust` needs a recent npm; the `--allow-publish` flag does not
+exist in older versions, which fail with an opaque `400 Bad Request`.
+
 ## Changing the vectors
 
 Only when the reference implementation changes, and only by regenerating:
