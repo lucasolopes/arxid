@@ -1,0 +1,46 @@
+[package]
+name = "arxid"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.70"
+description = "Keyed, reversible permutation for obfuscating sequential integer IDs: a 40-bit format-preserving Feistel network with an ARX round function, plus an optional base62 encoding."
+license = "MIT"
+repository = "https://github.com/lucasolopes/arxid"
+homepage = "https://github.com/lucasolopes/arxid"
+documentation = "https://docs.rs/arxid"
+readme = "README.md"
+keywords = ["obfuscation", "feistel", "arx", "id", "permutation"]
+categories = ["algorithms", "encoding", "no-std"]
+
+[features]
+default = ["std", "encoding", "zeroize"]
+
+# Link against `std`. Disable for `no_std` targets; the core permutation needs
+# nothing but `core`, and the base62 layer needs only `alloc`.
+std = ["alloc"]
+alloc = []
+
+# The base62 string layer (SPEC.md section 7). Requires `alloc` for `String`.
+encoding = ["alloc"]
+
+# Wipe the key from memory when an `Arxid` is dropped.
+zeroize = ["dep:zeroize"]
+
+# Optional build target: expose the core through `wasm-bindgen`. This is a way
+# to run the reference implementation in a browser, NOT the portability
+# mechanism. Interop comes from native ports validated against /vectors.
+wasm = ["std", "encoding", "dep:wasm-bindgen"]
+
+[dependencies]
+zeroize = { version = "1.8", default-features = false, optional = true }
+wasm-bindgen = { version = "0.2", optional = true }
+
+[dev-dependencies]
+proptest = "1"
+serde_json = "1"
+
+[package.metadata.docs.rs]
+all-features = true
+
+[lints.rust]
+missing_docs = "warn"

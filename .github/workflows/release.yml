@@ -1,0 +1,207 @@
+name: Release
+
+# Publishes to crates.io and npm.
+#
+# Trigger by pushing a version tag:
+#
+#   git tag v0.1.0 && git push origin v0.1.0
+#
+# or run manually from the Actions tab, where `dry_run` defaults to true so you
+# can rehearse the whole thing without publishing anything.
+#
+# Guard rails, in order:
+#   1. The full test suite runs first. Nothing publishes off a red build.
+#   2. The tag must match the version in Cargo.toml and package.json exactly.
+#   3. Publishing waits on the `release` environment, so you can require a
+#      manual approval in Settings > Environments.
+#
+# Required secrets (Settings > Secrets > Actions):
+#   CARGO_REGISTRY_TOKEN  - crates.io API token
+#   NPM_TOKEN             - npm automation token (not needed if you configure
+#                           npm Trusted Publishing for this repo instead)
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: What to publish
+        type: choice
+        options: [both, rust, ts]
+        default: both
+      dry_run:
+        description: Rehearse without publishing
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: verify
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      dry_run: ${{ steps.version.outputs.dry_run }}
+      publish_rust: ${{ steps.version.outputs.publish_rust }}
+      publish_ts: ${{ steps.version.outputs.publish_ts }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Resolve version and mode
+        id: version
+        env:
+          TARGET: ${{ inputs.target || 'both' }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+
+          cargo_version=$(grep -m1 '^version = ' impl/rust/Cargo.toml | cut -d'"' -f2)
+          npm_version=$(node -p "require('./impl/ts/package.json').version")
+
+          if [ "$cargo_version" != "$npm_version" ]; then
+            echo "::error::version mismatch: Cargo.toml is $cargo_version, package.json is $npm_version"
+            exit 1
+          fi
+
+          if [ "${{ github.event_name }}" = "push" ]; then
+            tag="${GITHUB_REF#refs/tags/v}"
+            if [ "$tag" != "$cargo_version" ]; then
+              echo "::error::tag v$tag does not match the manifest version $cargo_version"
+              exit 1
+            fi
+            dry_run=false
+          else
+            dry_run="${DRY_RUN:-true}"
+          fi
+
+          case "$TARGET" in
+            both) rust=true;  ts=true  ;;
+            rust) rust=true;  ts=false ;;
+            ts)   rust=false; ts=true  ;;
+          esac
+
+          {
+            echo "version=$cargo_version"
+            echo "dry_run=$dry_run"
+            echo "publish_rust=$rust"
+            echo "publish_ts=$ts"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Releasing $cargo_version (dry_run=$dry_run, rust=$rust, ts=$ts)"
+
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal --component rustfmt,clippy
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: impl/ts/package-lock.json
+
+      # Never publish off an unverified tree. This repeats CI on purpose: a tag
+      # can point at a commit CI never ran on.
+      - name: Rust checks
+        working-directory: impl/rust
+        run: |
+          cargo fmt --check
+          cargo clippy --all-targets --all-features -- -D warnings
+          cargo test --all-features
+
+      - name: TypeScript checks
+        working-directory: impl/ts
+        run: |
+          npm ci
+          npm run typecheck
+          npm test
+          npm run build
+          npm run lint:pack
+
+      - name: Vectors are reproducible
+        run: |
+          cargo run --manifest-path impl/rust/Cargo.toml --example gen_vectors > /tmp/vectors.json
+          diff -u vectors/vectors.json /tmp/vectors.json
+
+  publish-rust:
+    name: publish to crates.io
+    needs: verify
+    if: needs.verify.outputs.publish_rust == 'true'
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal
+
+      - name: Publish
+        working-directory: impl/rust
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          if [ "${{ needs.verify.outputs.dry_run }}" = "true" ]; then
+            cargo publish --dry-run
+          else
+            cargo publish
+          fi
+
+  publish-npm:
+    name: publish to npm
+    needs: verify
+    if: needs.verify.outputs.publish_ts == 'true'
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      # Required for npm provenance: npm signs an attestation tying the
+      # published tarball to this workflow run and commit.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: impl/ts/package-lock.json
+          registry-url: https://registry.npmjs.org
+
+      - name: Publish
+        working-directory: impl/ts
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: "true"
+        run: |
+          npm ci
+          if [ "${{ needs.verify.outputs.dry_run }}" = "true" ]; then
+            npm publish --dry-run
+          else
+            npm publish --access public
+          fi
+
+  github-release:
+    name: github release
+    needs: [verify, publish-rust, publish-npm]
+    if: github.event_name == 'push' && needs.verify.outputs.dry_run == 'false'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          gh release create "v$VERSION" \
+            --title "v$VERSION" \
+            --notes "See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for what changed.
+
+          Published to [crates.io](https://crates.io/crates/arxid/$VERSION) and [npm](https://www.npmjs.com/package/arxid/v/$VERSION)."

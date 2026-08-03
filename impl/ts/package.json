@@ -1,0 +1,55 @@
+{
+  "name": "arxid",
+  "version": "0.1.0",
+  "description": "Keyed, reversible permutation for obfuscating sequential integer IDs: a 40-bit format-preserving Feistel network with an ARX round function, plus an optional base62 encoding.",
+  "keywords": [
+    "obfuscation",
+    "feistel",
+    "arx",
+    "id",
+    "permutation"
+  ],
+  "license": "MIT",
+  "author": "Lucas Olopes",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lucasolopes/arxid.git",
+    "directory": "impl/ts"
+  },
+  "homepage": "https://github.com/lucasolopes/arxid#readme",
+  "bugs": "https://github.com/lucasolopes/arxid/issues",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "lint:pack": "publint && attw --pack . --profile esm-only",
+    "prepack": "npm run build"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
+    "@types/node": "^26.1.2",
+    "publint": "^0.3.2",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  }
+}
