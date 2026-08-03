@@ -1,0 +1,66 @@
+name: Bug report
+description: Something behaves incorrectly in an existing implementation
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please do not report security issues here. See [SECURITY.md](https://github.com/lucasolopes/arxid/blob/main/SECURITY.md).
+
+        Before filing: if the behavior you are reporting is that `key` and `~key`
+        produce the same output, that is specified and frozen. See SPEC.md
+        section 2.1.
+
+  - type: dropdown
+    id: impl
+    attributes:
+      label: Implementation
+      options:
+        - Rust (impl/rust)
+        - TypeScript (impl/ts)
+        - The spec itself
+        - Other / not sure
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: "0.1.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happens
+      description: What did you observe, and what did you expect instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: |
+        A minimal snippet, or the exact inputs. Concrete values help most:
+        the key, the id, the output you got, and the output you expected.
+      render: text
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: vectors
+    attributes:
+      label: Canonical vectors
+      options:
+        - label: I ran the test suite and noted whether `vectors/vectors.json` still passes
+          required: false
+
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: Language toolchain version, OS, target (if cross-compiling).
+      placeholder: "rustc 1.83.0, Ubuntu 24.04"

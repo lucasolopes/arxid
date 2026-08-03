@@ -1,0 +1,55 @@
+name: Feature request
+description: Suggest an improvement to an implementation, the docs, or the tooling
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **The algorithm is frozen at spec v1.** Requests that change observable
+        output (width, rounds, constants, key schedule, alphabet, code length)
+        are spec-version proposals - describe them under "Does this change
+        output?" below and expect a long conversation. See
+        [CONTRIBUTING.md](https://github.com/lucasolopes/arxid/blob/main/CONTRIBUTING.md#proposing-a-spec-v2).
+
+        To request a port to a new language, use the **Port request** template.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What is awkward or impossible today? Describe the situation, not the solution.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: What would you like instead? API sketches welcome.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: breaking
+    attributes:
+      label: Does this change output?
+      description: Would any `(key, id)` pair produce a different result than today?
+      options:
+        - "No - same outputs, different API or docs"
+        - "Yes - this is a spec-version proposal"
+        - "Not sure"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Scope
+      multiple: true
+      options:
+        - Rust (impl/rust)
+        - TypeScript (impl/ts)
+        - Spec
+        - Vectors
+        - Docs
+        - CI / tooling

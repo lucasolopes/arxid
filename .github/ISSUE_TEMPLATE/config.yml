@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/lucasolopes/arxid/security/advisories/new
+    about: Report privately. Do not open a public issue for a security problem.
+  - name: Question or discussion
+    url: https://github.com/lucasolopes/arxid/discussions
+    about: Usage questions, design discussion, and spec-v2 ideas.

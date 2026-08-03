@@ -1,0 +1,198 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# ADDING A PORT
+#
+# Every implementation gets its own job, and every job validates against the
+# SAME file: vectors/vectors.json. That is the whole interop contract.
+#
+# To add a port, copy the `ts` job below and change the toolchain. Keep the
+# shape:
+#   1. checkout          (the vectors live in this repo, do not vendor them)
+#   2. set up toolchain
+#   3. install deps
+#   4. typecheck / lint
+#   5. run the test suite, which MUST include the vector test
+#   6. build
+#
+# Then add the job's name to the `all-green` job at the bottom. Adding a port
+# should be purely additive: a new job, no edits to existing ones.
+
+jobs:
+  rust:
+    name: rust
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: impl/rust
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal --component rustfmt,clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: impl/rust
+
+      - name: Format
+        run: cargo fmt --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Build
+        run: cargo build --all-features
+
+      # Runs tests/vectors.rs, which validates every row of
+      # vectors/vectors.json in both directions.
+      - name: Test (all features, includes canonical vectors)
+        run: cargo test --all-features
+
+      - name: Test (default features)
+        run: cargo test
+
+      # Integration tests and doctests need `encoding`; --lib keeps this to the
+      # unit tests that are meaningful without it.
+      - name: Test (no default features)
+        run: cargo test --no-default-features --lib
+
+      - name: Test (encoding + zeroize, no std)
+        run: cargo test --no-default-features --features encoding,zeroize --lib
+
+      - name: Docs
+        run: cargo doc --all-features --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+  rust-no-std:
+    name: rust (no_std target)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: impl/rust
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup target add thumbv7em-none-eabi
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: impl/rust
+          key: no-std
+
+      # A bare-metal target has no `std` at all, so this genuinely proves the
+      # crate is no_std rather than merely not using std on a hosted target.
+      - name: Build for a bare-metal target
+        run: cargo build --no-default-features --features encoding,zeroize --target thumbv7em-none-eabi
+
+  rust-wasm:
+    name: rust (wasm32 target)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: impl/rust
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup target add wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: impl/rust
+          key: wasm
+
+      # WASM is an optional build target, not the portability mechanism. This
+      # job only proves the feature still compiles.
+      - name: Build for wasm32
+        run: cargo build --no-default-features --features wasm --target wasm32-unknown-unknown
+
+  ts:
+    name: typescript
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: impl/ts
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: impl/ts/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # Runs test/vectors.test.ts, which validates every row of
+      # vectors/vectors.json in both directions.
+      - name: Test (includes canonical vectors)
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+  vectors:
+    name: vectors are reproducible
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: impl/rust
+          key: vectors
+
+      # The committed vectors must be exactly what the reference implementation
+      # produces. A diff here means someone hand-edited them or changed the
+      # algorithm without regenerating.
+      - name: Regenerate and diff
+        run: |
+          cargo run --manifest-path impl/rust/Cargo.toml --example gen_vectors > /tmp/vectors.json
+          diff -u vectors/vectors.json /tmp/vectors.json || {
+            echo "::error::vectors/vectors.json does not match the reference implementation."
+            echo "::error::Regenerate with: cd impl/rust && cargo run --example gen_vectors > ../../vectors/vectors.json"
+            exit 1
+          }
+
+  # Single required status check. Add every new port job to `needs`.
+  all-green:
+    name: all green
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [rust, rust-no-std, rust-wasm, ts, vectors]
+    steps:
+      - name: Check results
+        run: |
+          for result in ${{ join(needs.*.result, ' ') }}; do
+            if [ "$result" != "success" ]; then
+              echo "::error::a required job did not succeed (got: $result)"
+              exit 1
+            fi
+          done
+          echo "all required jobs succeeded"

@@ -1,0 +1,9 @@
+* text=auto eol=lf
+
+# The canonical vectors are byte-compared against the reference implementation's
+# stdout in CI. They must be LF on every platform.
+vectors/vectors.json text eol=lf
+
+*.png binary
+*.jpg binary
+*.gif binary

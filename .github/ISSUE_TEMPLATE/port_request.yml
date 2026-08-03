@@ -1,0 +1,53 @@
+name: Port request
+description: Request or claim a port of arxid to another language
+title: "Port: <language>"
+labels: [port]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ports are the most valuable contribution to this project. Read
+        [CONTRIBUTING.md](https://github.com/lucasolopes/arxid/blob/main/CONTRIBUTING.md#adding-a-port)
+        for the full process.
+
+        The short version: reimplement [spec/SPEC.md](https://github.com/lucasolopes/arxid/blob/main/spec/SPEC.md)
+        natively (not a WASM wrapper), validate against
+        [vectors/vectors.json](https://github.com/lucasolopes/arxid/blob/main/vectors/vectors.json),
+        add a CI job, open a PR. A port that does not pass the vectors is not
+        merged.
+
+  - type: input
+    id: language
+    attributes:
+      label: Language
+      placeholder: "Go"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: intent
+    attributes:
+      label: Are you volunteering to write it?
+      options:
+        - "Yes, I plan to implement it"
+        - "No, I am requesting it"
+    validations:
+      required: true
+
+  - type: textarea
+    id: types
+    attributes:
+      label: Numeric type plan
+      description: |
+        The 40-bit domain fits in most numeric types, but the key schedule needs
+        exact 64-bit arithmetic (wrapping multiply, 64-bit rotate). How will the
+        key and the schedule be represented? What is the public type of the key?
+      placeholder: "uint64 natively; ids and codes as uint64 too."
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else
+      description: Idiomatic naming, packaging target, expected dependencies (ideally none).
