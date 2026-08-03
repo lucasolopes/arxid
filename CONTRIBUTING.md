@@ -109,6 +109,20 @@ The crate is `#![forbid(unsafe_code)]` and builds on `no_std`. If you add a
 dependency, justify it: the core should need nothing but `core`, and the
 encoding layer nothing but `alloc`.
 
+Measurement harnesses:
+
+```sh
+cargo bench                                    # criterion, timings
+cargo run --release --example avalanche        # diffusion sweep, 1..12 rounds
+```
+
+CI compiles the benchmarks but does not trust their timings: numbers from a
+shared runner are noise. If you update the figures in the README, measure on an
+idle machine, take the median of at least three runs, and say what you measured
+on. Absolute timings drifted by 3x on a laptop that was merely busy, and the
+arxid-vs-HMAC ratio ranged 7x-23x until the machine was quiet, so a single
+casual run is not evidence.
+
 ### TypeScript (`impl/ts`)
 
 ```sh

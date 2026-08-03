@@ -77,6 +77,12 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
 
+      # Compile the benchmarks without running them. Timings on a shared CI
+      # runner are meaningless, but a bench that stops compiling is a real
+      # break, and without this it would rot unnoticed.
+      - name: Benchmarks compile
+        run: cargo bench --no-run
+
   rust-no-std:
     name: rust (no_std target)
     runs-on: ubuntu-latest
