@@ -175,9 +175,10 @@ deobfuscate(code: u64, key: u64) -> u64    // decode: Feistel inverse, §3.2 inv
 - `deobfuscate(obfuscate(x, k), k) == (x & MAX_ID)` for all `x`, all `k`.
 - Total, never panics/throws on integer input.
 
-(Reference Rust names these `encode`/`decode` internally, matching the Quark
-source; the public crate surface SHOULD use `obfuscate`/`deobfuscate` to avoid
-colliding with the string-encoding layer below.)
+(Implementations SHOULD name these `obfuscate`/`deobfuscate` rather than
+`encode`/`decode`, to avoid colliding with the string-encoding layer in §7. The
+reference implementation uses `obfuscate`/`deobfuscate` throughout, internally
+and publicly.)
 
 ---
 
