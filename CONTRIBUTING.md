@@ -121,6 +121,50 @@ npm run build
 
 Zero runtime dependencies is a hard requirement.
 
+## How changes land
+
+`main` is protected. Every change arrives through a pull request, and the
+required checks must pass before it can merge:
+
+| Check | From |
+|---|---|
+| `all green` | the CI workflow (every implementation, every feature combination, the canonical vectors) |
+| `cargo deny` | Rust dependency advisories, licenses, bans, sources |
+| `codeql (typescript)` | static analysis |
+| `npm audit` | JavaScript dependency advisories |
+
+Merges are squash-only, and the branch is deleted afterwards. Force pushes and
+deletion of `main` are blocked outright.
+
+## Releasing
+
+Maintainers only. Publishing is automated; do not run `cargo publish` or
+`npm publish` by hand.
+
+1. Bump the version in **both** `impl/rust/Cargo.toml` and
+   `impl/ts/package.json`. They must match: the release workflow refuses to run
+   if they disagree.
+2. Update `CHANGELOG.md`.
+3. Land those on `main` through a PR as usual.
+4. Rehearse: run the **Release** workflow from the Actions tab with
+   `dry_run: true`. This executes the entire path, including `cargo publish
+   --dry-run` and `npm publish --dry-run`, without publishing.
+5. Tag and push:
+
+   ```sh
+   git tag v0.2.0
+   git push origin v0.2.0
+   ```
+
+The workflow then re-runs the full suite (a tag can point at a commit CI never
+saw), verifies the tag matches both manifests, publishes to crates.io and npm,
+and opens a GitHub release. npm packages are published with provenance, so the
+tarball is cryptographically tied to the workflow run and commit that produced
+it.
+
+Publishing waits on the `release` environment, so a manual approval can be
+required in Settings > Environments.
+
 ## Changing the vectors
 
 Only when the reference implementation changes, and only by regenerating:
