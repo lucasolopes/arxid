@@ -5,10 +5,12 @@ body:
   - type: markdown
     attributes:
       value: |
-        **The algorithm is frozen at spec v1.** Requests that change observable
-        output (width, rounds, constants, key schedule, alphabet, code length)
-        are spec-version proposals - describe them under "Does this change
-        output?" below and expect a long conversation. See
+        **The algorithm is fixed within a spec version, currently v2.** Requests
+        that change observable output (width, rounds, constants, key schedule,
+        alphabet, code length) are spec-version proposals - describe them under
+        "Does this change output?" below. Such proposals are welcome when they
+        come with evidence: v2 exists because review found measurable defects in
+        v1. See
         [CONTRIBUTING.md](https://github.com/lucasolopes/arxid/blob/main/CONTRIBUTING.md#proposing-a-spec-v2).
 
         To request a port to a new language, use the **Port request** template.

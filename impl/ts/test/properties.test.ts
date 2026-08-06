@@ -47,10 +47,10 @@ const SAMPLE_KEYS = [
 describe("constants", () => {
   it("match the spec", () => {
     expect(WIDTH_BITS).toBe(40);
-    expect(ROUNDS).toBe(4);
+    expect(ROUNDS).toBe(6);
     expect(MAX_ID).toBe(2 ** 40 - 1);
     expect(CODE_LEN).toBe(7);
-    expect(SPEC_VERSION).toBe(1);
+    expect(SPEC_VERSION).toBe(2);
     expect(ALPHABET).toHaveLength(62);
     expect(ALPHABET.slice(0, 10)).toBe("0123456789");
     expect(ALPHABET[10]).toBe("A");
@@ -115,24 +115,30 @@ describe("permutation", () => {
     }
   });
 
-  it("treats complement keys as equivalent, by design", () => {
-    // SPEC.md section 2.1: the key schedule is not injective. `key` and `~key`
-    // derive the same subkeys and therefore the same permutation. This is
-    // frozen behavior, not a defect: a port that "fixes" it stops conforming.
-    // Pinned here so nobody repairs it by accident.
+  it("no longer treats complement keys as equivalent", () => {
+    // Spec v1 folded the key halves with XOR, which cancelled under complement
+    // and collapsed the key space to 2^63. Spec v2 folds with a wrapping add.
+    // Pinned so the regression cannot creep back in.
     const complement = (k: bigint) => ~k & ((1n << 64n) - 1n);
     for (const key of SAMPLE_KEYS) {
-      for (const id of SAMPLE_IDS) {
-        expect(obfuscate(id, key)).toBe(obfuscate(id, complement(key)));
-      }
+      const differs = SAMPLE_IDS.some(
+        (id) => obfuscate(id, key) !== obfuscate(id, complement(key)),
+      );
+      expect(differs, `key ${key} still matches its complement`).toBe(true);
     }
   });
 
-  it("does not map consecutive ids to consecutive codes", () => {
+  it("does not preserve the ordering of consecutive ids", () => {
+    // Deliberately not asserted: that adjacent codes never occur. See SPEC.md
+    // section 11 - spec v1 made that claim and it was false.
     const arxid = new Arxid(0x0123456789abcdefn);
-    for (let id = 100; id < 110; id += 1) {
-      expect(Math.abs(arxid.obfuscate(id) - arxid.obfuscate(id + 1))).toBeGreaterThan(1);
+    const codes = Array.from({ length: 100 }, (_, i) => arxid.obfuscate(100 + i));
+    let ascending = 0;
+    for (let i = 1; i < codes.length; i += 1) {
+      if (codes[i - 1]! < codes[i]!) ascending += 1;
     }
+    expect(ascending).toBeGreaterThan(20);
+    expect(ascending).toBeLessThan(80);
   });
 
   it("reduces out-of-domain input instead of rejecting it", () => {

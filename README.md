@@ -2,23 +2,33 @@
 
 [![CI](https://github.com/lucasolopes/arxid/actions/workflows/ci.yml/badge.svg)](https://github.com/lucasolopes/arxid/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Spec v1](https://img.shields.io/badge/spec-v1%20frozen-informational)](spec/SPEC.md)
+[![Spec v2](https://img.shields.io/badge/spec-v2-informational)](spec/SPEC.md)
 
-**Sequential id in, 7-character non-enumerable code out. Reversible with the key.
+**Sequential id in, 7-character unordered code out. Reversible with the key.
 Identical in every language.**
 
 ```rust
 let arxid = Arxid::new(key);
 
-arxid.obfuscate_str(1000);   // "7cAKhgu"
-arxid.obfuscate_str(1001);   // "Cc1W2dQ"
-arxid.obfuscate_str(1002);   // "7figrne"
+arxid.obfuscate_str(1000);   // "BmgnvEe"
+arxid.obfuscate_str(1001);   // "4ndJOI8"
+arxid.obfuscate_str(1002);   // "FgxNwC0"
 
-arxid.deobfuscate_str("Cc1W2dQ");   // Some(1001)
+arxid.deobfuscate_str("4ndJOI8");   // Some(1001)
 ```
 
 No lookup table, no extra column, no state. Just a keyed permutation over the
 integers you already have.
+
+> **Obfuscation, not encryption.** arxid makes ids non-sequential; it does not
+> make them secret. It is not a MAC, not access control, and has had no
+> independent cryptographic review. Read the
+> [threat model](spec/SPEC.md#9-threat-model-and-security-posture) before
+> deploying — it says plainly what this does and does not stop.
+
+> **Spec v1 is withdrawn.** It shipped "frozen" before anyone reviewed it, and
+> review found two real defects. v2 fixes both. **Codes issued by 0.1.x do not
+> decode under 0.2.** See [what changed](spec/SPEC.md#11-what-changed-in-v2-and-why).
 
 ## Install
 
@@ -27,13 +37,14 @@ integers you already have.
 <tr valign="top"><td>
 
 ```toml
-arxid = "0.1"
+arxid = "0.2"
 ```
 
 ```rust
 use arxid::Arxid;
 
-let a = Arxid::new(0x9E37_79B9_7F4A_7C15);
+// Load your own random key. Never hardcode one.
+let a = Arxid::new(std::env::var("ARXID_KEY")?.parse()?);
 
 let code = a.obfuscate(1001);
 a.deobfuscate(code);          // 1001
@@ -51,7 +62,8 @@ npm install arxid
 ```ts
 import { Arxid } from "arxid";
 
-const a = new Arxid(0x9e3779b97f4a7c15n);
+// Load your own random key. Never hardcode one.
+const a = new Arxid(BigInt(process.env.ARXID_KEY!));
 
 const code = a.obfuscate(1001);
 a.deobfuscate(code);          // 1001
@@ -81,82 +93,109 @@ format-preserving over a 40-bit domain, plus an optional base62 encoding.
 | | |
 |---|---|
 | Domain | `[0, 2^40 - 1]` = `[0, 1099511627775]` (about 1.1 trillion ids) |
-| Key | `u64` (effective key space 2^63, see [SPEC.md §2.1](spec/SPEC.md)) |
-| Rounds | 4 |
+| Key | `u64`, full 2^64 key space |
+| Rounds | 5 |
 | Output | base62, fixed 7 characters, alphabet `0-9A-Za-z` in that order |
+| Tweak | none — one key is one global mapping, so use a key per resource type ([§2.2](spec/SPEC.md)) |
 | Dependencies | none in the core (pure integer arithmetic) |
 
 40 bits encodes to exactly 7 base62 characters and fits inside IEEE-754's safe
 integer range, so no language needs a big-integer type for the public values.
 
-### Diffusion
+### Why 6 rounds
 
-Flip one input bit; how many output bits change? The ideal is half of them.
-Swept over 1 to 12 rounds, 200,000 sampled ids each
-([`examples/avalanche.rs`](impl/rust/examples/avalanche.rs),
-`cargo run --release --example avalanche`):
+Spec v1 used 4, chosen as the smallest count reaching 0.5000 *mean* avalanche.
+That was the wrong criterion — mean avalanche is cheap to satisfy and evidences
+almost nothing. Three independent measurements, each reproducible from this repo,
+put the real threshold at 5:
 
-| Rounds | Avalanche | Bit-pair coverage | Worst single pair |
-|---:|---:|---:|---:|
-| 1 | 0.1381 | 440/1600 | 0.5000 |
-| 2 | 0.3622 | 1220/1600 | 0.5000 |
-| 3 | 0.4866 | **1600/1600** | 0.4840 |
-| **4** | **0.5001** | **1600/1600** | 0.1640 |
-| 5 | 0.5001 | 1600/1600 | 0.0040 |
-| 6 | 0.5000 | 1600/1600 | 0.0049 |
-| 8 | 0.5000 | 1600/1600 | 0.0035 |
-| 12 | 0.5000 | 1600/1600 | 0.0054 |
+| Measurement | 4 rounds (v1) | 5 rounds | 6 rounds (v2) | Reproduce |
+|---|---:|---:|---:|---|
+| Worst (input bit, output bit) pair, deviation from ideal 0.5 | 0.1117 | 0.0039 | **0.0041** | [`examples/avalanche.rs`](impl/rust/examples/avalanche.rs) |
+| Chosen-query distinguisher vs. a random permutation | separates at ~2^13 queries, ratio 1.85 by 2^16 | ratio ~1.00 | **no bias to the 2^20 wall**, ratio ~1.00 | [`examples/distinguisher.rs`](impl/rust/examples/distinguisher.rs) |
+| Consecutive ids landing on adjacent codes | hundreds to thousands × the rate of chance | at the rate of chance | **at the rate of chance** | [`examples/adjacency.rs`](impl/rust/examples/adjacency.rs) |
 
-*Avalanche* is the mean fraction of output bits that flip; ideal 0.5.
-*Coverage* is how many of the 40×40 (input bit, output bit) pairs can be
-influenced at all; anything under 1600 means some input bit structurally cannot
-reach some output bit. *Worst single pair* is the largest deviation from 0.5 for
-any individual pair; ideal 0.
+Five rounds already clears all three, and the worst-pair and distinguisher
+columns are flat from there. arxid ships **6** anyway: Patarin's generic attacks
+on Feistel schemes recommend at least six rounds for a pseudorandom permutation,
+and the round beyond the measured threshold is lost in the noise of the base62
+step (see below), so there is no reason to argue with the recommendation instead
+of taking it.
 
-Four rounds is where the **mean** reaches 0.5 with full coverage, and that is
-what spec v1 froze. Rounds past 5 buy nothing on any of these metrics; the
-sweep runs to 12 to show exactly that.
+The worst-pair row was already in v1's own published table. The signal was there
+and was not acted on. The other two came out of public review after release,
+which is the review v1 should have had before being declared frozen.
 
-Read the last column honestly: at 4 rounds one bit pair is still 0.164 away
-from ideal, and it takes 5 rounds for per-pair balance to close. The
-calibration optimised the average, not the worst case. This is a statistical
-property, not a security proof.
+**None of this is a security proof.** It is the point where the structure we know
+how to measure disappears, plus a round of margin. See the
+[threat model](spec/SPEC.md#9-threat-model-and-security-posture).
 
 ### Performance
 
-Measured with criterion, single threaded, `cargo bench`:
-
-| Benchmark | Time/op | Throughput |
-|---|---:|---:|
-| `permute/obfuscate` (raw u64 → u64) | 4.42 ns | ~225M ops/s |
-| `permute/deobfuscate` | 9.86 ns | ~101M ops/s |
-| `arxid/encode` (permute + base62 String) | 49.4 ns | ~20M ops/s |
-| `feistel_hmac/encode` (same Feistel, HMAC-SHA256 round) | 786.6 ns | ~1.3M ops/s |
-
-The last two lines are the point.
+The structural claim is the durable one:
 [`benches/compare_bench.rs`](impl/rust/benches/compare_bench.rs) holds the
-network structure constant (same balanced Feistel, same 4 rounds, same 40-bit
-width, same base62 step) and swaps **only** the round function, ARX for
-HMAC-SHA256. That isolates the claim: **~16x faster**, from integer ops instead
-of hash calls.
+network constant (same balanced Feistel, same round count, same 40-bit width,
+same base62 step) and swaps **only** the round function, ARX for HMAC-SHA256.
+That isolates one thing: doing integer arithmetic instead of hash calls is
+**about an order of magnitude faster**, and that gap survives whatever CPU you
+are on.
 
-The ratio travels better than the absolute numbers. Both sides run on the same
-machine in the same harness, so the gap survives whatever CPU you are on, while
-the ns figures do not. Measured on a 13th Gen Intel Core i7-1355U, 16 GB RAM,
-Windows 11 Pro; median of three runs on an otherwise idle machine. Treat the
-absolute figures as order-of-magnitude, not as a spec: on a loaded laptop the
-same benchmarks drifted by 3x, and the ratio itself ranged 7x-23x until the
-machine was quiet.
+The absolute numbers do not travel, and this repo has now demonstrated that on
+itself. Measured with criterion on a 13th Gen Intel Core i7-1355U, 16 GB RAM,
+Windows 11 Pro:
+
+| Benchmark | Time/op |
+|---|---:|
+| `permute/obfuscate` (raw u64 → u64) | ~15 ns |
+| `permute/deobfuscate` | ~18 ns |
+| `arxid/encode` (permute + base62 String) | ~127 ns |
+| `feistel_hmac/encode` (same Feistel, HMAC-SHA256 round) | ~1265 ns |
+
+**Treat these as order-of-magnitude only.** Re-running the identical code path
+on this machine across sessions produced figures spanning 3x, and the ARX/HMAC
+ratio ranged from 10x to 22x depending on nothing but how busy the laptop was.
+If the number matters to you, measure it on your own hardware with `cargo
+bench`; do not trust the table above, including the version of it that used to
+quote 4.42 ns to three significant figures.
+
+One honest oddity: `deobfuscate` benchmarks consistently slower than
+`obfuscate` even though a Feistel does identical work in both directions. That
+is a codegen artifact of the reversed loop, not an algorithmic asymmetry.
+
+### What the extra rounds cost
+
+Going from v1's 4 rounds to v2's 6 is not free, but where the cost lands is the
+whole story. Measured by interleaving every arm in one process and taking the
+minimum over 40 repetitions, so session-to-session drift cancels instead of
+swamping the comparison
+([`examples/roundcost.rs`](impl/rust/examples/roundcost.rs)):
+
+- **On the bare permutation** the cost is real and roughly linear: each ARX round
+  adds on the order of ~1.5 ns, so the two extra rounds are about +3 ns — a large
+  fraction of a permutation that only takes a handful of nanoseconds to begin
+  with.
+- **On the path an application actually pays** (permutation + the base62
+  `String`) it disappears. The allocation costs roughly ten times the whole
+  permutation, and its own run-to-run jitter is several nanoseconds — larger than
+  the round cost it would be hiding. One run of this very example clocked the
+  5-round encode as *faster* than the 4-round encode, which is impossible and is
+  exactly the point: on that path the round count is below the noise floor.
+
+So the sixth round costs a couple of nanoseconds on a number nobody ships and
+nothing measurable on the number they do — which is also why "measure avalanche
+and pick the cheapest count" was never a real performance argument to begin with.
+Don't trust these figures to three significant figures; measure on your own
+hardware with `cargo bench`.
 
 ## Portability
 
-The product here is not a library in one language. It is a **frozen
+The product here is not a library in one language. It is a **versioned
 specification plus canonical test vectors**:
 
-- [`spec/SPEC.md`](spec/SPEC.md) — normative, frozen at v1. Width, rounds, the
+- [`spec/SPEC.md`](spec/SPEC.md) — normative, currently v2. Width, rounds, the
   ARX constants, the golden constant, the key schedule, the alphabet and its
-  order, the code length: all contract.
-- [`vectors/vectors.json`](vectors/vectors.json) — 61 known-answer tests,
+  order, the code length: all contract, per version.
+- [`vectors/vectors.json`](vectors/vectors.json) — 71 known-answer tests,
   generated by the reference implementation. Every port validates against this
   exact file.
 
@@ -200,7 +239,8 @@ solves a broader problem; arxid solves a narrower one more strictly.
 | Domain | `[0, 2^40-1]` | unbounded |
 | Profanity blocklist | no | yes |
 | Ecosystem | 2 implementations | many, mature |
-| Interop guarantee | canonical vectors, frozen spec | per-implementation |
+| Interop guarantee | canonical vectors, versioned spec | per-implementation |
+| Track record | released 2026, one revision after first review | years of production use |
 
 **Choose Sqids** if you need to pack several numbers into one id, have ids
 beyond 2^40, want the profanity blocklist, or want a library that already
@@ -209,6 +249,9 @@ exists in your language today.
 **Choose arxid** if you need every code to be exactly the same length, and you
 want the obfuscation driven by an actual key with measured diffusion rather than
 by an alphabet permutation.
+
+**Choose Sqids** also if maturity matters more to you than any of the above.
+arxid is new, and it has already had to withdraw a spec version.
 
 **Do not choose either as a security control.** Sqids is explicit about this:
 *"There is no encryption of any kind"* and *"Given enough effort, somebody could
@@ -220,38 +263,59 @@ independently audited**. Neither library is a substitute for authorization.
 
 ## Security
 
-Read this before deploying.
+The full threat model is
+[SPEC.md §9](spec/SPEC.md#9-threat-model-and-security-posture). The summary:
 
-- arxid is a **keyed reversible permutation for id obfuscation**. It defeats
-  trivial enumeration of sequential resources. It is **not** encryption of
-  arbitrary data.
-- It provides **no authentication and no integrity**: it is **not a MAC**. Any
-  well-formed 7-character code decodes to *some* id. A valid-looking output does
-  not prove it was produced by a holder of the key. For unforgeability, layer a
-  real MAC on top.
-- Non-enumerability is a **measured statistical property** (see the diffusion
-  table above), **not** a cryptographic guarantee. Four rounds is a calibrated
-  minimum for the avalanche target, not a security margin. Resistance to key
-  recovery depends on the round count and construction and has not been formally
-  analysed. This construction has **not** undergone independent cryptographic
-  audit.
-- The **effective key space is 2^63**, not 2^64: `key` and `~key` produce the
-  same permutation ([SPEC.md §2.1](spec/SPEC.md)). This is frozen behavior.
-- The **40-bit domain is small** by cryptographic standards. It is a
-  format-preserving choice driven by the 7-character code length.
-- **ID obfuscation is not access control.** Never use arxid as the sole
-  authorization barrier for a resource that must stay secret.
-- Use a random key per deployment, kept out of source control.
+**Is it computationally infeasible to recover an id from a code without the key?
+No.** arxid raises enumeration from "count upward" to "actually do some work".
+It does not put it out of reach.
+
+**It stops:** walking `/orders/1`, `/orders/2`, …; reading your row count or
+growth rate off sequential URLs.
+
+**It does not stop:** forgery or tampering (no authentication, no integrity, not
+a MAC — every well-formed in-range code decodes to *some* id); anyone holding
+the key; anyone your authorization layer should have stopped. **Id obfuscation
+is not access control.**
+
+**Known limits, with numbers.** The 40-bit domain is small by cryptographic
+standards, and the 20-bit Feistel halves are smaller. Luby–Rackoff only
+guarantees security to the birthday bound in the half width — ~2^10 queries —
+and does not apply here anyway, since the ARX round function is not a PRF.
+Spec v1's 4-round construction was separable from a random permutation at ~2^13
+chosen queries; that structure is gone by 5 rounds and v2's 6 rounds shows no
+bias out to the full 2^20 slice an attacker can reach. Even so, this is where
+*measurable* structure ends, not a proven margin — Patarin's generic Feistel
+attacks recommend at least 6 rounds for a pseudorandom permutation, which is the
+bar v2 now meets and does not claim to exceed. The round function has no
+published lineage or differential analysis, and there has been **no independent
+cryptographic audit**.
+
+**Operational requirements.** Random key per deployment, from the environment or
+a secret manager, never committed and never copied out of documentation. A
+**separate key per resource type** — there is no tweak, so one key is one global
+mapping and `/orders/{code}` and `/users/{code}` would otherwise be linkable.
+Keys stored as bytes are big-endian. And **do not echo internal ids back**: the
+one reachable form of the distinguisher needs exactly that.
+
+**If you need more than this**, use random ids or UUIDv7 (confidentiality), FF1
+or FF3-1 from NIST SP 800-38G (real format-preserving encryption), or an HMAC in
+a lookup column (unforgeable public ids).
 
 To report a vulnerability, see [`SECURITY.md`](SECURITY.md).
 
 ## Versioning
 
-SemVer, per implementation. The **algorithm** is frozen at spec v1.
+SemVer, per implementation. The **algorithm** is versioned separately, by spec
+version, currently **v2**. Implementations expose it as `SPEC_VERSION`.
 
 Any observable behavior change requires a **new spec version and a new set of
 vectors**, never a silent bump. A port producing output different from the
 reference is a bug in the port.
+
+A current spec version is not a promise that it is final. v1 was published as
+"frozen" before anyone had reviewed it; that was the mistake, and the version
+mechanism exists precisely so the next one can be corrected too.
 
 ## License
 

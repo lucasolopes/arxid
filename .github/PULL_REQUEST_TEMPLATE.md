@@ -13,7 +13,7 @@ Closes #
 
 ## Output compatibility
 
-**The algorithm is frozen at spec v1.** Confirm one:
+**The algorithm is fixed within a spec version (currently v2).** Confirm one:
 
 - [ ] This does not change the output of any `(key, id)` pair.
 - [ ] This is an intentional spec-version change, agreed in issue # above.

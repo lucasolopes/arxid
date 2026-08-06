@@ -134,12 +134,18 @@ fn vectors_are_well_formed_and_cover_the_required_cases() {
 }
 
 #[test]
-fn the_consecutive_run_is_not_enumerable() {
+fn the_consecutive_run_does_not_preserve_input_order() {
     let rows = load();
 
-    // Find the key that carries a run of consecutive ids and check that its
-    // outputs are not neighbours. This is the property the whole crate exists
-    // for, asserted directly on the published vectors.
+    // The run of consecutive ids exists so ports exercise a stretch of
+    // neighbouring inputs. What is checked is that the outputs carry no trace
+    // of the input ordering.
+    //
+    // What is NOT checked, deliberately: that neighbouring ids never produce
+    // adjacent codes. Spec v1 asserted that here and it was false - see
+    // SPEC.md section 11 and `examples/adjacency.rs`. A construction that
+    // truly guaranteed it would be distinguishable from a random permutation
+    // for that very reason.
     let mut run: Vec<(u64, u64)> = rows
         .iter()
         .enumerate()
@@ -155,12 +161,10 @@ fn the_consecutive_run_is_not_enumerable() {
         run.len()
     );
 
-    for pair in run.windows(2) {
-        let (id_a, out_a) = pair[0];
-        let (id_b, out_b) = pair[1];
-        assert!(
-            out_a.abs_diff(out_b) > 1,
-            "consecutive ids {id_a}/{id_b} produced neighbouring outputs {out_a}/{out_b}"
-        );
-    }
+    let ascending = run.windows(2).filter(|w| w[0].1 < w[1].1).count();
+    assert!(
+        ascending > 0 && ascending < run.len() - 1,
+        "the run is monotonic ({ascending}/{} ascending steps), which would leak the input order",
+        run.len() - 1
+    );
 }

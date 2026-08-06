@@ -10,10 +10,20 @@ pub const WIDTH_BITS: u32 = 40;
 
 /// Number of Feistel rounds (SPEC.md section 3.2).
 ///
-/// Calibrated: 4 is the smallest round count that reaches exact 0.5000 avalanche
-/// with full 40/40 bit coverage. Frozen by spec v1 - changing it changes every
-/// output.
-pub const ROUNDS: usize = 4;
+/// 5 is the smallest round count at which both measured structural defects of
+/// the 4-round spec v1 construction disappear:
+///
+/// - a chosen-query distinguisher that separated 4 rounds from a random
+///   permutation at about 2^13 queries (`examples/distinguisher.rs`),
+/// - an excess of consecutive ids mapping to adjacent codes, hundreds to
+///   thousands of times the rate of a random permutation (`examples/adjacency.rs`).
+///
+/// arxid uses 6. Both defects already measure clean at 5, but Patarin's generic
+/// attacks on Feistel schemes recommend at least 6 rounds for a pseudorandom
+/// permutation, and the round beyond the measured threshold costs about 1.9 ns -
+/// lost in the noise of the base62 step - so there is no reason not to take the
+/// recommendation. Part of the spec v2 contract; changing it changes every output.
+pub const ROUNDS: usize = 6;
 
 /// Largest value in the domain: `2^40 - 1 = 1_099_511_627_775`.
 pub const MAX_ID: u64 = (1u64 << WIDTH_BITS) - 1;
@@ -23,12 +33,19 @@ const GOLDEN: u64 = 0x9E37_79B9_7F4A_7C15;
 
 /// Derives the 32-bit round subkey from the 64-bit master key (SPEC.md section 4).
 ///
-/// All arithmetic wraps modulo 2^64; the result is the low 32 bits of
-/// `x ^ (x >> 32)`.
+/// All arithmetic wraps modulo 2^64; the two 32-bit halves of `x` are folded
+/// together with a wrapping **add**.
+///
+/// The add is load-bearing. Spec v1 folded with `lo XOR hi`, which made the
+/// schedule non-injective in a specific way: complementing the key complements
+/// both halves, and XOR cancels the complement, so `key` and `!key` derived
+/// identical subkeys and the effective key space was 2^63. Addition does not
+/// commute with complement, so the pairing is gone and all 2^64 keys are
+/// distinct.
 #[inline]
 fn subkey(key: u64, round: usize) -> u32 {
     let x = key.rotate_left((round as u32) * 7 + 1) ^ GOLDEN.wrapping_mul(round as u64 + 1);
-    (x ^ (x >> 32)) as u32
+    (x as u32).wrapping_add((x >> 32) as u32)
 }
 
 /// ARX round function: mixes one `half_bits`-wide half with the round subkey
@@ -184,30 +201,47 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "alloc")]
     #[test]
-    fn sequential_ids_are_not_enumerable() {
+    fn input_ordering_is_not_preserved() {
+        // The property that actually matters: the permutation destroys the
+        // ordering of the input, so a code says nothing about where its id sits
+        // in the sequence.
+        //
+        // Note what is deliberately NOT asserted here: that consecutive ids
+        // never produce adjacent codes. Spec v1 asserted exactly that, and it
+        // was wrong twice over. It is not a property of a good permutation - an
+        // ideal one produces such pairs about twice per full domain, and a
+        // construction that guaranteed zero would be distinguishable from
+        // random precisely because of it. Worse, v1's 4-round construction
+        // produced them about 1300 times more often than chance. See
+        // `examples/adjacency.rs`.
         let key = 0x0123_4567_89AB_CDEF;
-        let a = obfuscate(100, key);
-        let b = obfuscate(101, key);
+        let codes: Vec<u64> = (100..200).map(|id| obfuscate(id, key)).collect();
+
+        let ascending = codes.windows(2).filter(|w| w[0] < w[1]).count();
         assert!(
-            a.abs_diff(b) > 1,
-            "neighboring codes are sequential: {a} {b}"
+            (20..80).contains(&ascending),
+            "codes preserve too much of the input ordering: {ascending}/99 ascending steps"
         );
     }
 
     #[test]
-    fn complement_keys_are_equivalent_by_design() {
-        // SPEC.md section 2.1: the key schedule is not injective. `key` and
-        // `!key` derive the same subkeys and therefore the same permutation.
-        // This is frozen behavior, not a defect: a port that "fixes" it stops
-        // conforming. Pinned here so nobody repairs it by accident.
+    fn complement_keys_are_no_longer_equivalent() {
+        // Spec v1 folded the key halves with XOR, which cancelled under
+        // complement and collapsed the key space to 2^63. Spec v2 folds with a
+        // wrapping add. Pinned so the regression cannot creep back in.
         for key in [0u64, 1, GOLDEN, 0xD1B5_4A32_D192_ED03, 1 << 63] {
-            for round in 0..ROUNDS {
-                assert_eq!(subkey(key, round), subkey(!key, round));
-            }
-            for id in [0u64, 1, 42, 12345, MAX_ID] {
-                assert_eq!(obfuscate(id, key), obfuscate(id, !key));
-            }
+            let differs = (0..ROUNDS).any(|round| subkey(key, round) != subkey(!key, round));
+            assert!(
+                differs,
+                "key {key:#x} still derives the subkeys of its complement"
+            );
+            assert_ne!(
+                obfuscate(12345, key),
+                obfuscate(12345, !key),
+                "key {key:#x} and its complement still define the same permutation"
+            );
         }
     }
 
@@ -216,8 +250,8 @@ mod tests {
         // Hand-derived from SPEC.md section 4 for key = 1, round = 0:
         //   rotl64(1, 1) = 2; GOLDEN * 1 = 0x9E3779B97F4A7C15
         //   x = 2 ^ 0x9E3779B97F4A7C15 = 0x9E3779B97F4A7C17
-        //   x >> 32 = 0x9E3779B9
-        //   (x ^ (x >> 32)) as u32 = 0x7F4A7C17 ^ 0x9E3779B9 = 0xE17D05AE
-        assert_eq!(subkey(1, 0), 0xE17D_05AE);
+        //   lo32(x) = 0x7F4A7C17, hi32(x) = 0x9E3779B9
+        //   lo.wrapping_add(hi) = 0x7F4A7C17 + 0x9E3779B9 = 0x1D81F5D0 (mod 2^32)
+        assert_eq!(subkey(1, 0), 0x1D81_F5D0);
     }
 }
