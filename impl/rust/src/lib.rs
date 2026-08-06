@@ -23,10 +23,11 @@ pub use codec::{from_base62, to_base62, ALPHABET, CODE_LEN};
 
 /// The specification version this implementation conforms to.
 ///
-/// The algorithm is frozen per spec version. A change in observable output
-/// requires a new spec version and a new set of canonical vectors, never a
-/// silent bump.
-pub const SPEC_VERSION: u32 = 1;
+/// A change in observable output requires a new spec version and a new set of
+/// canonical vectors, never a silent bump. Spec v1 is **withdrawn**: it used 4
+/// rounds and an XOR key fold, both of which had measurable defects (see
+/// `spec/SPEC.md` section 11). Codes produced under v1 do not decode under v2.
+pub const SPEC_VERSION: u32 = 2;
 
 /// A keyed, reversible permutation over the 40-bit id domain.
 ///
@@ -51,7 +52,13 @@ impl Arxid {
     /// Builds a permutation from a 64-bit key.
     ///
     /// Every bit of the key participates in the key schedule. Use a random key
-    /// per deployment and keep it out of source control.
+    /// per deployment, load it from the environment or a secret manager, and
+    /// keep it out of source control.
+    ///
+    /// There is **no tweak**: one key defines one global mapping. If two
+    /// resource types share a key, the same id yields the same code in both,
+    /// so `/orders/{code}` and `/users/{code}` are linkable. Derive a separate
+    /// key per resource type when that matters.
     ///
     /// ```
     /// # use arxid::Arxid;
@@ -61,6 +68,26 @@ impl Arxid {
     #[must_use]
     pub const fn new(key: u64) -> Self {
         Self { key }
+    }
+
+    /// Builds a permutation from 8 raw key bytes, read **big-endian**.
+    ///
+    /// The `u64` itself has no endianness, but a key at rest does: the moment
+    /// it lives in an environment variable, a config file, or a KMS blob, the
+    /// two ends must agree on byte order. This constructor fixes that order so
+    /// a key stored by one service is read identically by another, on any
+    /// platform.
+    ///
+    /// ```
+    /// # use arxid::Arxid;
+    /// let a = Arxid::from_key_bytes([0x9E, 0x37, 0x79, 0xB9, 0x7F, 0x4A, 0x7C, 0x15]);
+    /// assert_eq!(a, Arxid::new(0x9E37_79B9_7F4A_7C15));
+    /// ```
+    #[must_use]
+    pub const fn from_key_bytes(bytes: [u8; 8]) -> Self {
+        Self {
+            key: u64::from_be_bytes(bytes),
+        }
     }
 
     /// Obfuscates an id. Values outside `[0, MAX_ID]` are reduced with

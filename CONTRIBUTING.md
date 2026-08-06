@@ -5,25 +5,31 @@ opening a PR.
 
 ## What arxid is
 
-arxid is not primarily a library. It is a **frozen specification**
+arxid is not primarily a library. It is a **versioned specification**
 ([`spec/SPEC.md`](spec/SPEC.md)) plus **canonical test vectors**
 ([`vectors/vectors.json`](vectors/vectors.json)). The implementations exist to
 serve the spec, not the other way round. The Rust crate is the reference
 implementation; everything else is a port validated against the same vectors.
+The algorithm is fixed *within* a spec version, but the spec itself is not
+frozen against review — v1 was, and that was the mistake v2 exists to correct.
 
 ## The one rule
 
-**The algorithm is frozen at spec v1.** Width, round count, the ARX constants
-`7/13/17`, the golden constant, the key schedule, the base62 alphabet and its
-order, and the code length are all part of the contract.
+**The algorithm is fixed within a spec version, currently v2.** Width, round
+count, the ARX constants `7/13/17`, the golden constant, the key schedule and
+its fold, the base62 alphabet and its order, and the code length are all part of
+the contract.
 
 Any change to observable output requires a **new spec version and a new set of
 vectors**. Never a silent bump. A PR that changes an existing vector value will
 be rejected unless it is explicitly a spec-version proposal.
 
-This includes behavior that looks like a bug but is specified. For example, the
-key schedule maps `key` and `!key` to the same permutation (SPEC.md section
-2.1). That is frozen. "Fixing" it makes your implementation non-conforming.
+**This is not the same as the algorithm being final.** v1 was published as
+"frozen" with no review period, and review found two real defects that became
+v2 (SPEC.md section 11). Versioning exists so the algorithm can be corrected,
+not to make correction unwelcome. If you find something wrong with v2, that is a
+reason to propose v3 — bring evidence, ideally a measurement that runs from this
+repo like `examples/distinguisher.rs` does.
 
 ## Adding a port
 
@@ -211,12 +217,25 @@ Never edit `vectors.json` by hand. If regeneration changes an existing value,
 stop: you have changed the algorithm, which is a spec-version decision, not a
 patch.
 
-## Proposing a spec v2
+## Proposing a new spec version
 
 Open an issue first, not a PR. Include: what changes, why the current behavior
-is inadequate, and the migration story for data already obfuscated under v1
-(which is unrecoverable under a different algorithm). Spec versions are
-expensive by design.
+is inadequate, and the migration story for data already obfuscated under the
+current version (which is unrecoverable under a different algorithm). Spec
+versions are expensive by design — but "expensive" means they need evidence,
+not that they are unwelcome.
+
+The bar is a **measurement, not an argument**. v2 happened because two of them
+landed: a chosen-query distinguisher separating 4 rounds from a random
+permutation at ~2^13 queries, and an adjacency rate hundreds to thousands of
+times above chance. Both
+now live in `impl/rust/examples/` so anyone can re-run them. A proposal that
+comes with a reproducible experiment in that style will be taken seriously; one
+that reasons from first principles alone will get a request for the experiment.
+
+Reports that the current version fails to defend against something it never
+claimed to defend against are better read against
+[SPEC.md section 9](spec/SPEC.md), which states the threat model explicitly.
 
 ## Code of conduct
 

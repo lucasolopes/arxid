@@ -1,7 +1,7 @@
 /**
  * arxid - keyed, reversible permutation for obfuscating sequential integer IDs.
  *
- * Native TypeScript port of `spec/SPEC.md` (spec v1). This is not a WASM
+ * Native TypeScript port of `spec/SPEC.md` (spec v2). This is not a WASM
  * wrapper: it reimplements the algorithm and is validated against the canonical
  * vectors in `/vectors/vectors.json`.
  *
@@ -13,8 +13,16 @@
 /** Width of the permutation domain, in bits. */
 export const WIDTH_BITS = 40;
 
-/** Number of Feistel rounds. Frozen by spec v1. */
-export const ROUNDS = 4;
+/**
+ * Number of Feistel rounds. Part of the spec v2 contract.
+ *
+ * Both measured defects of the 4-round spec v1 construction (a chosen-query
+ * distinguisher separating it from a random permutation at ~2^13 queries, and an
+ * excess of consecutive ids mapping to adjacent codes) already clear at 5 rounds.
+ * arxid uses 6 to meet Patarin's ">= 6 rounds" recommendation for a pseudorandom
+ * permutation; the extra round is lost in the noise of the base62 step.
+ */
+export const ROUNDS = 6;
 
 /** Largest value in the domain: `2^40 - 1`. */
 export const MAX_ID = 1099511627775;
@@ -22,8 +30,13 @@ export const MAX_ID = 1099511627775;
 /** Length of an encoded code, in characters. */
 export const CODE_LEN = 7;
 
-/** The specification version this implementation conforms to. */
-export const SPEC_VERSION = 1;
+/**
+ * The specification version this implementation conforms to.
+ *
+ * Spec v1 is withdrawn: it used 4 rounds and an XOR key fold, both of which had
+ * measurable defects. Codes produced under v1 do not decode under v2.
+ */
+export const SPEC_VERSION = 2;
 
 /**
  * The base62 alphabet, in normative order: `0-9`, then `A-Z`, then `a-z`.
@@ -66,12 +79,19 @@ function rotl32(v: number, n: number): number {
  *
  * This is the step that breaks naive ports: the whole computation is 64-bit, so
  * it runs in `BigInt` and only narrows to a 32-bit `number` at the very end.
+ *
+ * The two halves are folded with a wrapping **add**, not XOR. Spec v1 used XOR,
+ * which cancelled under key complement and halved the effective key space.
  */
 function subkey(key: bigint, round: number): number {
   const rotated = rotl64(key, BigInt((round * 7 + 1) % 64));
   const golden = (GOLDEN * BigInt(round + 1)) & MASK_64;
   const x = (rotated ^ golden) & MASK_64;
-  return Number((x ^ (x >> 32n)) & 0xffffffffn) >>> 0;
+  const lo = Number(x & 0xffffffffn);
+  const hi = Number(x >> 32n);
+  // lo + hi stays below 2^33, safely inside the double range; `>>> 0` applies
+  // the mod-2^32 reduction.
+  return (lo + hi) >>> 0;
 }
 
 /**
@@ -236,11 +256,39 @@ export class Arxid {
    *
    * The key is a `bigint` because a `u64` does not fit safely in `number`.
    * Values outside `[0, 2^64)` are reduced modulo 2^64. Every bit of the key
-   * participates in the schedule. Use a random key per deployment and keep it
-   * out of source control.
+   * participates in the schedule. Use a random key per deployment, load it from
+   * the environment or a secret manager, and keep it out of source control.
+   *
+   * There is **no tweak**: one key defines one global mapping. If two resource
+   * types share a key, the same id yields the same code in both, so
+   * `/orders/{code}` and `/users/{code}` are linkable. Derive a separate key
+   * per resource type when that matters.
    */
   constructor(key: bigint) {
     this.#subkeys = deriveSubkeys(key, ROUNDS);
+  }
+
+  /**
+   * Builds a permutation from 8 raw key bytes, read **big-endian**.
+   *
+   * A `bigint` has no endianness, but a key at rest does: once it lives in an
+   * environment variable, a config file, or a KMS blob, both ends must agree on
+   * byte order. This fixes that order so a key written by a Rust service is
+   * read identically here.
+   */
+  static fromKeyBytes(bytes: Uint8Array | readonly number[]): Arxid {
+    const b = Array.from(bytes);
+    if (b.length !== 8) {
+      throw new RangeError(`key must be exactly 8 bytes, got ${b.length}`);
+    }
+    let key = 0n;
+    for (const byte of b) {
+      if (!Number.isInteger(byte) || byte < 0 || byte > 255) {
+        throw new RangeError(`key byte out of range: ${byte}`);
+      }
+      key = (key << 8n) | BigInt(byte);
+    }
+    return new Arxid(key);
   }
 
   /**

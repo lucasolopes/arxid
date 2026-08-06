@@ -12,6 +12,77 @@ vectors, never a silent bump.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-06
+
+**Spec v2. This release changes every output: codes issued by 0.1.x do not
+decode here.** Migrating means re-issuing codes.
+
+0.1.0 shipped its specification as "frozen at v1" without any public review
+period. Review after release found two measurable defects. This release fixes
+both, withdraws two false documentation claims, and drops the pretence that a
+specification can be final before anyone has looked at it.
+
+### Changed - algorithm (breaking)
+
+- **`ROUNDS` 4 -> 6.** Four rounds is separable from a random permutation with
+  about 2^13 chosen queries (ratio 1.85 by 2^16), and maps consecutive ids to
+  adjacent codes hundreds to thousands of times more often than chance. Both
+  defects measure clean by five rounds, as does the worst-pair avalanche
+  deviation that 0.1.0's own published table already showed (0.1117 at 4 rounds,
+  0.0039 at 5, 0.0041 at 6). v2 ships **six** rounds: five is the measured
+  threshold, and six is the minimum Patarin's generic attacks on Feistel schemes
+  recommend for a pseudorandom permutation, at a cost lost in the base62 step.
+  The defects are structural to the round count: they persist under the revised
+  key schedule below.
+- **Key schedule fold `lo XOR hi` -> `lo + hi` (wrapping).** XOR cancelled under
+  key complement, so `key` and `!key` derived identical subkeys and defined the
+  same permutation, halving the effective key space to 2^63. 0.1.0 documented
+  this and declared it frozen behavior rather than a defect. The full 2^64 key
+  space is restored.
+
+### Added
+
+- `examples/distinguisher.rs` - measures the chosen-query separation from a
+  random permutation, validated against a true Fisher-Yates permutation, for 4,
+  5, 6 and 8 rounds, in both the encode and decode directions.
+- `examples/adjacency.rs` - measures how often consecutive ids land on adjacent
+  codes, against the ~2-per-domain rate of an ideal permutation.
+- `Arxid::from_key_bytes` (Rust) and `Arxid.fromKeyBytes` (TypeScript), reading
+  8 raw key bytes **big-endian**, so a key stored by one service is read
+  identically by another.
+- SPEC.md section 9, a positive threat model: what arxid defends against, what
+  it does not, the known limits with numbers, and when to use something else
+  (random ids / UUIDv7, FF1 or FF3-1, or an HMAC lookup column).
+- SPEC.md section 2.2, documenting that there is **no tweak**: one key is one
+  global mapping, so `/orders/{code}` and `/users/{code}` are linkable unless
+  each resource type gets its own key. 0.1.0 did not mention this at all.
+- SPEC.md section 11, recording what changed from v1 and why.
+- `u64::MAX` added to the canonical vectors (61 -> 71 rows), now that it is no
+  longer equivalent to key `0`.
+
+### Removed - false claims
+
+- **"Consecutive ids do not produce consecutive codes."** Withdrawn. It is not a
+  property of a good permutation: an ideal one produces such pairs about twice
+  per full domain, and guaranteeing zero would itself be a distinguisher. 0.1.0
+  asserted it in three READMEs and pinned it in three test files. A concrete
+  0.1.0 counterexample: under key `0x652BFD48C7ED0458`, ids 48326508 and
+  48326509 encode to `5kusgvr` and `5kusgvs`. The tests now assert what is
+  actually true - that the run carries no trace of the input ordering.
+- **"The effective key space is 2^63 ... frozen behavior, not a defect."**
+  It was a defect. See above.
+
+### Changed - documentation
+
+- Every hardcoded key removed from examples and quickstarts. Documentation now
+  loads keys from the environment and says not to copy keys out of docs.
+- Benchmark figures no longer quoted to three significant figures. Re-running
+  the identical code path across sessions produced results spanning 3x and an
+  ARX/HMAC ratio ranging 10x-22x; the section now says so and tells readers to
+  measure on their own hardware.
+- "Frozen" boilerplate consolidated; a current spec version is documented as the
+  latest revision, not a promise of finality.
+
 ## [0.1.0] - 2026-08-03
 
 Initial release. Spec v1, frozen.
@@ -40,5 +111,6 @@ Initial release. Spec v1, frozen.
   a property of the frozen algorithm, not a defect, and is pinned by tests in
   both implementations.
 
-[Unreleased]: https://github.com/lucasolopes/arxid/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/lucasolopes/arxid/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/lucasolopes/arxid/releases/tag/v0.2.0
 [0.1.0]: https://github.com/lucasolopes/arxid/releases/tag/v0.1.0

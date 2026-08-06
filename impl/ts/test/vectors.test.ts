@@ -113,7 +113,11 @@ describe("canonical vectors", () => {
     }
   });
 
-  it("shows the consecutive run is not enumerable", () => {
+  it("shows the consecutive run does not preserve input order", () => {
+    // What is NOT checked, deliberately: that neighbouring ids never produce
+    // adjacent codes. Spec v1 asserted that and it was false - see SPEC.md
+    // section 11. A construction that truly guaranteed it would be
+    // distinguishable from a random permutation for that very reason.
     const run = [
       ...new Map(
         vectors
@@ -124,13 +128,12 @@ describe("canonical vectors", () => {
 
     expect(run.length).toBeGreaterThanOrEqual(11);
 
+    let ascending = 0;
     for (let i = 1; i < run.length; i += 1) {
-      const [idA, outA] = run[i - 1]!;
-      const [idB, outB] = run[i]!;
-      expect(
-        Math.abs(outA - outB),
-        `consecutive ids ${idA}/${idB} produced neighbouring outputs`,
-      ).toBeGreaterThan(1);
+      if (run[i - 1]![1] < run[i]![1]) ascending += 1;
     }
+    expect(ascending, "the run is monotonic, which would leak input order")
+      .toBeGreaterThan(0);
+    expect(ascending).toBeLessThan(run.length - 1);
   });
 });

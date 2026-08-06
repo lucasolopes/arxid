@@ -7,7 +7,8 @@
 //! - Both benches take the SAME input class: an integer id from a wrapping
 //!   counter over arxid's 40-bit domain, black-boxed in and out.
 //! - `feistel_hmac` holds the network structure constant: same balanced
-//!   Feistel, same 4 rounds, same 40-bit width, same base62 step at the end.
+//!   Feistel, same round count (`permute::ROUNDS`), same 40-bit width, same
+//!   base62 step at the end.
 //!   The ONLY thing that changes is the round function, ARX -> HMAC-SHA256.
 //!   That isolates the actual claim being measured.
 //! - Both therefore produce the same shape of output: a 7-character code.

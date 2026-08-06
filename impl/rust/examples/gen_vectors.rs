@@ -12,19 +12,23 @@
 use arxid::{to_base62, Arxid, MAX_ID};
 
 /// Keys exercised by the vectors: the two degenerate ones, the golden constant,
-/// an arbitrary large key, and a key with only the top bit set.
+/// an arbitrary large key, a key with only the top bit set, and `u64::MAX`.
 ///
-/// The last one is deliberate: a port that truncated the key to 32 bits would
-/// treat it as 0 and produce the wrong answer. `u64::MAX` would be a poor
-/// choice here because the key schedule maps `key` and `!key` to the same
-/// permutation (see SPEC.md section 2), so its vectors would just duplicate
-/// those of key 0.
-const KEYS: [u64; 5] = [
+/// The top-bit key is deliberate: a port that truncated the key to 32 bits
+/// would treat it as 0 and produce the wrong answer.
+///
+/// `u64::MAX` is deliberate too, and is new in spec v2. Under v1 it was
+/// excluded because the XOR key fold made `key` and `!key` the same
+/// permutation, so its rows would have duplicated those of key 0. v2 folds with
+/// a wrapping add, so `u64::MAX` is now a distinct key - and these rows are
+/// exactly what would catch a port that reintroduced the v1 fold.
+const KEYS: [u64; 6] = [
     0,
     1,
     0x9E37_79B9_7F4A_7C15,
     0xD1B5_4A32_D192_ED03,
     0x8000_0000_0000_0000,
+    u64::MAX,
 ];
 
 /// Domain edges plus a few ordinary values.
@@ -41,7 +45,11 @@ const IDS: [u64; 10] = [
     MAX_ID,
 ];
 
-/// The key used for the consecutive-id run that demonstrates non-enumerability.
+/// The key used for the run of consecutive ids.
+///
+/// The run exists so ports can check a stretch of neighbouring inputs, not to
+/// demonstrate any guarantee about their outputs. Spec v1 claimed consecutive
+/// ids never produce adjacent codes; that claim was false and has been removed.
 const SEQUENCE_KEY: u64 = 0x9E37_79B9_7F4A_7C15;
 
 fn main() {

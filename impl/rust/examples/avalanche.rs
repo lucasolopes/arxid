@@ -1,7 +1,9 @@
 //! Measures the avalanche / strict avalanche criterion (SAC) of the permutation.
 //!
-//! This is the measurement behind the claim that 4 rounds is the smallest round
-//! count that closes diffusion. Run it with:
+//! This is the measurement that showed *mean* avalanche is the wrong criterion:
+//! it saturates at 0.5000 by 4 rounds, which is exactly why spec v1 chose 4 - but
+//! the worst individual (input bit, output bit) pair keeps improving past that
+//! (0.11 at 4 rounds, 0.004 at 5), which is the signal spec v2 acted on. Run with:
 //!
 //! ```text
 //! cargo run --release --example avalanche
@@ -24,8 +26,9 @@ use arxid::permute::{feistel_n, MAX_ID, WIDTH_BITS};
 
 const SAMPLES: u64 = 200_000;
 
-/// Round counts to sweep. The sweep goes well past the frozen count of 4 to
-/// show that the extra rounds buy nothing on the mean-avalanche metric.
+/// Round counts to sweep. The sweep goes well past the shipped count of 6 to
+/// show that the mean-avalanche metric saturates early and says almost nothing,
+/// while the worst-pair column keeps moving.
 const MAX_ROUNDS: usize = 12;
 
 const KEY: u64 = 0x9E37_79B9_7F4A_7C15;

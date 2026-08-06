@@ -192,12 +192,53 @@ jobs:
             exit 1
           }
 
+  # The committed vectors are 71 fixed rows: they pin the cases a port is most
+  # likely to get wrong, but they are the same rows every run. This job samples
+  # a fresh slice of the key and id space on each run, so a port that agrees on
+  # the committed vectors and diverges elsewhere still gets caught.
+  differential:
+    name: differential fuzz (rust vs typescript)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: impl/rust
+          key: differential
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: impl/ts/package-lock.json
+
+      - name: Build the TypeScript port
+        working-directory: impl/ts
+        run: |
+          npm ci
+          npm run build
+
+      # The seed varies per run, and is echoed into the output so a failure is
+      # reproducible locally with the same command.
+      - name: Generate randomized rows from the Rust reference
+        run: |
+          cargo run --release --manifest-path impl/rust/Cargo.toml \
+            --example gen_fuzz -- ${{ github.run_id }} 200000 > /tmp/rows.json
+
+      - name: Check the TypeScript port against them
+        working-directory: impl/ts
+        run: node scripts/differential.mjs /tmp/rows.json
+
   # Single required status check. Add every new port job to `needs`.
   all-green:
     name: all green
     runs-on: ubuntu-latest
     if: always()
-    needs: [rust, rust-no-std, rust-wasm, ts, vectors]
+    needs: [rust, rust-no-std, rust-wasm, ts, vectors, differential]
     steps:
       - name: Check results
         run: |

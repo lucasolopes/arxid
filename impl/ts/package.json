@@ -1,6 +1,6 @@
 {
   "name": "arxid",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Keyed, reversible permutation for obfuscating sequential integer IDs: a 40-bit format-preserving Feistel network with an ARX round function, plus an optional base62 encoding.",
   "keywords": [
     "obfuscation",

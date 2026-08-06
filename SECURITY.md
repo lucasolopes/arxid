@@ -22,18 +22,28 @@ patch release with a GitHub Security Advisory.
 
 ## Supported versions
 
-| Version | Supported |
-|---|---|
-| 0.1.x | ✅ |
+| Version | Spec | Supported |
+|---|---|---|
+| 0.2.x | v2 | ✅ |
+| 0.1.x | v1 | ❌ withdrawn |
 
 While the project is pre-1.0, only the latest release receives fixes.
+
+**0.1.x is withdrawn, not merely superseded.** Its 4-round construction is
+separable from a random permutation at about 2^13 chosen queries, and it mapped
+consecutive ids to adjacent codes hundreds to thousands of times more often than
+chance. Both are fixed in spec v2. Codes issued under v1 do not decode under v2; migrating means
+re-issuing them.
 
 ## What arxid is and is not
 
 Read this before filing a report - it defines what counts as a vulnerability.
+The full threat model is [SPEC.md section 9](spec/SPEC.md).
 
 arxid is a **keyed reversible permutation for id obfuscation**. It defeats
-trivial enumeration of sequential resources. It is:
+walking `/orders/1`, `/orders/2`, and it hides row counts and growth rates. It
+does **not** make ids secret: recovering an id from a code without the key is
+not computationally infeasible. It is:
 
 - **not** encryption of arbitrary data,
 - **not** a MAC. It provides no authentication and no integrity. A valid-looking
@@ -43,29 +53,38 @@ trivial enumeration of sequential resources. It is:
 - **not** access control. ID obfuscation is not authorization. Never use arxid
   as the sole barrier protecting a resource that must stay secret,
 - **not independently audited.** This construction has had no external
-  cryptographic review. Non-enumerability is a measured statistical property
-  (avalanche/SAC over a reduced-round ARX permutation), not a cryptographic
-  guarantee. Resistance to key recovery depends on the round count and
-  construction, and has not been formally analysed.
+  cryptographic review. The round function has no published lineage and no
+  differential or linear analysis. Non-enumerability is a measured statistical
+  property, not a cryptographic guarantee.
 
-Deployments should use their own random key, kept out of source control.
+Deployments should use their own random key, kept out of source control, and a
+separate key per resource type (there is no tweak).
 
 ### Known and accepted properties
 
 These are documented, specified behavior. Reports about them are welcome as
 discussion but are not treated as vulnerabilities:
 
-- **`key` and `!key` produce the same permutation** (SPEC.md section 2.1), so
-  the effective key space is 2^63 rather than 2^64. This is frozen in spec v1.
-- **4 rounds** is a calibrated minimum for the avalanche target, not a
-  cryptographic security margin. The calibration targeted *mean* avalanche and
-  structural bit coverage. Per-pair balance is weaker: the worst individual
-  (input bit, output bit) pair sits about 0.164 from the ideal 0.5 at 4 rounds,
-  versus about 0.004 at 5 rounds. Measured over 1 to 12 rounds with 200,000
-  samples each. Documented in SPEC.md section 3.2 and reproducible with
-  `impl/rust/examples/avalanche.rs`.
-- **The 40-bit domain** is small by cryptographic standards. It is a
-  format-preserving choice driven by the 7-character code length.
+- **The round count is a measured threshold plus the literature's minimum, not a
+  security proof.** Three separate measurements stop showing structure by 5
+  rounds: worst-pair avalanche deviation (0.1117 at 4 rounds, 0.0039 at 5, 0.0041
+  at 6), a chosen-query distinguisher, and the adjacency rate. arxid ships 6, the
+  minimum Patarin's generic attacks on Feistel schemes recommend for a
+  pseudorandom permutation. Meeting that minimum is not a proof for this
+  construction, whose round function is not a PRF. Reproducible with
+  `examples/avalanche.rs`, `examples/distinguisher.rs`, and
+  `examples/adjacency.rs`.
+- **The 40-bit domain** is small by cryptographic standards, and the 20-bit
+  Feistel halves are smaller. Luby-Rackoff only guarantees security to the
+  birthday bound in the half width, about 2^10 queries, and does not apply here
+  regardless because the ARX round function is not a PRF. Both are
+  format-preserving choices driven by the 7-character code length.
+- **No tweak.** One key defines one global mapping, so the same id yields the
+  same code across resource types sharing that key. Use a separate key per type
+  (SPEC.md section 2.2).
+- **Consecutive ids can land on adjacent codes.** This is expected of any good
+  permutation, at a rate of about two pairs per full domain. Spec v1 claimed
+  otherwise; that claim has been withdrawn as false.
 
 ### What is in scope
 

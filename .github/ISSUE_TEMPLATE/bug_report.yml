@@ -7,9 +7,10 @@ body:
       value: |
         Please do not report security issues here. See [SECURITY.md](https://github.com/lucasolopes/arxid/blob/main/SECURITY.md).
 
-        Before filing: if the behavior you are reporting is that `key` and `~key`
-        produce the same output, that is specified and frozen. See SPEC.md
-        section 2.1.
+        Before filing: an implementation is correct if it reproduces
+        `vectors/vectors.json` in both directions for the spec version it targets.
+        If your outputs differ, state which spec version (v2 is current) and
+        whether the canonical vectors still pass.
 
   - type: dropdown
     id: impl
@@ -27,7 +28,7 @@ body:
     id: version
     attributes:
       label: Version
-      placeholder: "0.1.0"
+      placeholder: "0.2.0"
     validations:
       required: true
 

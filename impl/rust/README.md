@@ -1,6 +1,6 @@
 # arxid (Rust reference implementation)
 
-`arxid` obfuscates a sequential integer id into a keyed, non-enumerable,
+`arxid` obfuscates a sequential integer id into a keyed, unordered,
 reversible form. It is a balanced Feistel network with an ARX (Add-Rotate-XOR)
 round function, format-preserving over 40 bits, plus an optional 7-character
 base62 encoding.
@@ -13,8 +13,11 @@ It is a pure library: no server, no HTTP, no network, no I/O.
 
 ```rust
 use arxid::Arxid;
+# fn key_from_env() -> u64 { 0x0123_4567_89AB_CDEF } // your secret manager
 
-let arxid = Arxid::new(0x9E37_79B9_7F4A_7C15); // your own random key
+// Load your own random key. Never hardcode one, and never copy a key out of
+// documentation - including this page.
+let arxid = Arxid::new(key_from_env());
 
 let code = arxid.obfuscate(1001);
 assert_eq!(arxid.deobfuscate(code), 1001);
@@ -24,16 +27,30 @@ assert_eq!(s.len(), 7);
 assert_eq!(arxid.deobfuscate_str(&s), Some(1001));
 ```
 
-Consecutive ids do not produce consecutive codes:
+Keys stored as raw bytes are read big-endian, so a key written by one service is
+read identically by another:
+
+```rust
+use arxid::Arxid;
+
+let from_bytes = Arxid::from_key_bytes([0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF]);
+assert_eq!(from_bytes, Arxid::new(0x0123_4567_89AB_CDEF));
+```
+
+Consecutive ids do not produce codes in any recoverable order:
 
 ```rust
 use arxid::Arxid;
 
 let arxid = Arxid::new(0x0123_4567_89AB_CDEF);
-let a = arxid.obfuscate(100);
-let b = arxid.obfuscate(101);
-assert!(a.abs_diff(b) > 1);
+let codes: Vec<u64> = (100..200).map(|id| arxid.obfuscate(id)).collect();
+let ascending = codes.windows(2).filter(|w| w[0] < w[1]).count();
+assert!((20..80).contains(&ascending)); // no monotone structure
 ```
+
+Note what is *not* claimed: that neighbouring ids never land on adjacent codes.
+That is not a property of a good permutation, and spec v1 was wrong to assert
+it. See [SPEC.md §11](https://github.com/lucasolopes/arxid/blob/main/spec/SPEC.md).
 
 The key can also be passed per call:
 
@@ -81,7 +98,7 @@ layer needs only `alloc`.
 
 ```toml
 [dependencies]
-arxid = { version = "0.1", default-features = false, features = ["encoding", "zeroize"] }
+arxid = { version = "0.2", default-features = false, features = ["encoding", "zeroize"] }
 ```
 
 `wasm` is an optional **build target**, not the portability mechanism.
@@ -102,13 +119,23 @@ cargo run --example gen_vectors > ../../vectors/vectors.json
 
 ## Security
 
-`arxid` is a keyed reversible permutation for id obfuscation. It is **not**
-encryption of arbitrary data, it is **not** a MAC (no authentication, no
-integrity), and it has **not** undergone independent cryptographic audit.
-Non-enumerability is a measured statistical property, not a cryptographic
-guarantee. **ID obfuscation is not access control**: never use arxid as the
-sole authorization barrier for a resource that must stay secret. Use a random
-key per deployment and keep it out of source control.
+Full threat model:
+[SPEC.md §9](https://github.com/lucasolopes/arxid/blob/main/spec/SPEC.md).
+
+**Recovering an id from a code without the key is not computationally
+infeasible.** arxid raises enumeration from "count upward" to "do some work". It
+is **not** encryption, **not** a MAC (no authentication, no integrity — every
+well-formed in-range code decodes to *some* id), and has had **no independent
+cryptographic audit**. **ID obfuscation is not access control.**
+
+Operationally: random key per deployment, loaded from the environment or a
+secret manager and never committed; a **separate key per resource type**, since
+there is no tweak and one key is one global mapping; and do not echo internal
+ids back in responses or errors.
+
+This crate implements **spec v2**. Spec v1 (crate 0.1.x) is withdrawn — it used
+4 rounds, which review showed to be separable from a random permutation at ~2^13
+chosen queries. Codes issued by 0.1.x do not decode here.
 
 ## License
 
