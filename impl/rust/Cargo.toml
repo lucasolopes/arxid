@@ -42,7 +42,7 @@ criterion = "0.5"
 # Only for benches/compare_bench.rs, which measures the ARX round function
 # against a structurally identical Feistel using HMAC-SHA256. Not used by the
 # library.
-hmac = "0.12"
+hmac = "0.13"
 sha2 = "0.10"
 
 [[bench]]
