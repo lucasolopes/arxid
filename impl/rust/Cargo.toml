@@ -38,7 +38,7 @@ wasm-bindgen = { version = "0.2", optional = true }
 [dev-dependencies]
 proptest = "1"
 serde_json = "1"
-criterion = "0.5"
+criterion = "0.8"
 # Only for benches/compare_bench.rs, which measures the ARX round function
 # against a structurally identical Feistel using HMAC-SHA256. Not used by the
 # library.
