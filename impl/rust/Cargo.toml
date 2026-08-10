@@ -43,7 +43,7 @@ criterion = "0.5"
 # against a structurally identical Feistel using HMAC-SHA256. Not used by the
 # library.
 hmac = "0.12"
-sha2 = "0.10"
+sha2 = "0.11"
 
 [[bench]]
 name = "permute_bench"
